@@ -3,6 +3,7 @@ import mysql.connector
 from mysql.connector import Error
 from flask_cors import CORS
 import uuid
+import os
 
 
 app = Flask(__name__)
@@ -12,10 +13,10 @@ CORS(app)
 # Database connection configuration
 # -------------------------------------
 db_config = {
-    'host': 'localhost',        # or your server IP / domain
-    'user': 'root',             # replace with your MySQL username
-    'password': 'Atsthinqor@2025', # replace with your MySQL password
-    'database': 'ats_system'    # your database name
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'user': os.environ.get('DB_USER', 'root'),
+    'password': os.environ.get('DB_PASSWORD', '5757'),
+    'database': os.environ.get('DB_NAME', 'ats_system')
 }
 
 # -------------------------------------
@@ -38,21 +39,36 @@ def get_db_connection():
 def home():
     return 'ATS Backend is Running! 🚀'
 
-# @app.route('/testdb')
-# def test_db():
-#     try:
-#         conn = get_db_connection()
-#         if conn:
-#             cursor = conn.cursor()
-#             cursor.execute("SHOW DATABASES;")
-#             databases = cursor.fetchall()
-#             cursor.close()
-#             conn.close()
-#             return f"✅ Connected Successfully! Databases: {databases}"
-#         else:
-#             return "❌ Failed to connect to database."
-#     except Exception as e:
-#         return f"❌ Error: {str(e)}"
+@app.route('/healthz')
+def healthz():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"status": "down", "db": False}), 503
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return jsonify({"status": "ok", "db": True}), 200
+    except Exception as e:
+        return jsonify({"status": "down", "db": False, "error": str(e)}), 503
+
+@app.route('/testdb')
+def test_db():
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SHOW DATABASES;")
+            databases = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Connected", "databases": databases}), 200
+        else:
+            return jsonify({"message": "Failed to connect to database"}), 503
+    except Exception as e:
+        return jsonify({"message": "Error", "error": str(e)}), 500
 
 import hashlib
 
@@ -153,6 +169,8 @@ def login():
         hashed_pw = hashlib.sha256(password.encode()).hexdigest()
 
         conn = get_db_connection()
+        if conn is None:
+            return jsonify({"message": "❌ Database unavailable. Check connection settings."}), 503
         cursor = conn.cursor(dictionary=True)
 
         # Search in 'users' table (registered users)
