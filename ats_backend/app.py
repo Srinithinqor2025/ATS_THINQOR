@@ -15,7 +15,7 @@ CORS(app)
 db_config = {
     'host': os.environ.get('DB_HOST', 'localhost'),
     'user': os.environ.get('DB_USER', 'root'),
-    'password': os.environ.get('DB_PASSWORD', '5757'),
+    'password': os.environ.get('DB_PASSWORD', 'Atsthinqor@2025'),
     'database': os.environ.get('DB_NAME', 'ats_system')
 }
 
