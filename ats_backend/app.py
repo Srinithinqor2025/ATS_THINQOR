@@ -4,6 +4,7 @@ from mysql.connector import Error
 from flask_cors import CORS
 import uuid
 import os
+import re
 from pathlib import Path
 from werkzeug.utils import secure_filename
 try:
@@ -207,6 +208,66 @@ def get_candidates():
         print(e)
         return jsonify({"message": str(e)}), 500
 
+
+# --------------------------------------------------------
+
+# Create users table if it doesn't exist
+
+# --------------------------------------------------------
+
+@app.route("/create-users-table", methods=["GET"])
+
+def create_users_table():
+
+    try:
+
+        conn = get_db_connection()
+
+        cursor = conn.cursor()
+
+
+
+        cursor.execute("""
+
+            CREATE TABLE IF NOT EXISTS users (
+
+                id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+
+                name VARCHAR(100) NOT NULL,
+
+                email VARCHAR(150) NOT NULL UNIQUE,
+
+                password_hash VARCHAR(255) NOT NULL,
+
+                role ENUM('ADMIN','DELIVERY_MANAGER','TEAM_LEAD','RECRUITER','CLIENT','CANDIDATE') DEFAULT 'RECRUITER',
+
+                phone VARCHAR(20) DEFAULT NULL,
+
+                status VARCHAR(20) DEFAULT 'ACTIVE',
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+            )
+
+        """)
+
+
+
+        conn.commit()
+
+        cursor.close()
+
+        conn.close()
+
+
+
+        return jsonify({"message": "✅ 'users' table created (or already exists)."}), 200
+
+
+
+    except Exception as e:
+
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/update-candidate/<int:id>", methods=["PUT"])
 def update_candidate(id):
@@ -464,6 +525,63 @@ def create_requirement():
         data = request.get_json()
         req_id = str(uuid.uuid4())
 
+        # Validate required fields
+        required_fields = ["client_id", "title", "description", "location"]
+        missing = [field for field in required_fields if not (data.get(field) or "").strip()]
+        if missing:
+            return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+        # Normalize client_id (ensure int for DB schema)
+        client_id_value = data.get("client_id")
+        try:
+            client_id_value = int(client_id_value)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid client_id"}), 400
+
+        # Helpers
+        def _sanitize_text(value, length=None):
+            try:
+                text = str(value or "").strip()
+            except Exception:
+                text = ""
+            if length:
+                return text[:length]
+            return text
+
+        # Normalize and sanitize CTC fields (DB columns may be numeric or varchar; coerce to clean text)
+        def _sanitize_ctc(value):
+            try:
+                text = str(value or "").strip()
+            except Exception:
+                text = ""
+            # Keep only a reasonable length to fit column widths (e.g., 100)
+            return text[:100]
+
+        title_value = _sanitize_text(data.get("title"), 255)
+        description_value = _sanitize_text(data.get("description"))
+        location_value = _sanitize_text(data.get("location"), 100)
+        skills_value = _sanitize_text(data.get("skills_required"), 255)
+
+        # Experience required (float column) - extract first numeric value, default 0.0
+        experience_raw = data.get("experience_required")
+        try:
+            if isinstance(experience_raw, (int, float)):
+                experience_value = float(experience_raw)
+            else:
+                matches = re.findall(r"[\d\.]+", str(experience_raw or ""))
+                experience_value = float(matches[0]) if matches else 0.0
+        except (ValueError, TypeError):
+            experience_value = 0.0
+
+        ctc_range_value = _sanitize_ctc(data.get("ctc_range"))
+        # Frontend may send 'ectc_range' (expected CTC); DB column is 'ecto_range'
+        ecto_range_value = data.get("ecto_range")
+        if not ecto_range_value:
+            ecto_range_value = data.get("ectc_range")
+        ecto_range_value = _sanitize_ctc(ecto_range_value)
+
+        created_by_value = _sanitize_text(data.get("created_by"), 50).upper()
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -473,15 +591,15 @@ def create_requirement():
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'OPEN',%s)
         """, (
             req_id,
-            data.get("client_id"),
-            data.get("title"),
-            data.get("description"),
-            data.get("location"),
-            data.get("skills_required"),
-            data.get("experience_required"),
-            data.get("ctc_range"),
-            data.get("ecto_range"),
-            data.get("created_by")
+            client_id_value,
+            title_value,
+            description_value,
+            location_value,
+            skills_value,
+            experience_value,
+            ctc_range_value,
+            ecto_range_value,
+            created_by_value
         ))
 
         conn.commit()
@@ -491,6 +609,7 @@ def create_requirement():
         return jsonify({"message": "Requirement created", "id": req_id}), 201
 
     except Exception as e:
+        print("❌ Error creating requirement:", e)
         return jsonify({"error": str(e)}), 500
     
 @app.route("/assign-requirement", methods=["POST"])
@@ -767,8 +886,10 @@ def delete_user(id):
 if __name__ == '__main__':
     # Import AI routes after env loading (to avoid circular import issues)
     from controllers.ai_chat_controller import register_ai_routes
+    from controllers.ai_jd_controller import jd_bp
     ensure_admin_exists()
     ensure_user_status_defaults()
     # Register AI assistant routes without altering existing endpoints
     register_ai_routes(app)
+    app.register_blueprint(jd_bp)
     app.run(debug=True)
