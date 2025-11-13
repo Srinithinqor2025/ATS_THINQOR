@@ -233,6 +233,30 @@ def list_requirements_for_admin() -> List[Dict[str, Any]]:
 	)
 
 
+def list_requirement_allocations() -> List[Dict[str, Any]]:
+
+	return _fetch_all(
+		"""
+		SELECT 
+			ra.id,
+			ra.requirement_id,
+			ra.recruiter_id,
+			ra.assigned_by,
+			ra.status,
+			ra.created_at,
+			req.title AS requirement_title,
+			recruiter.name AS recruiter_name,
+			assigner.name AS assigned_by_name
+		FROM requirement_allocations ra
+		LEFT JOIN requirements req ON req.id = ra.requirement_id
+		LEFT JOIN users recruiter ON recruiter.id = ra.recruiter_id
+		LEFT JOIN users assigner ON assigner.id = ra.assigned_by
+		ORDER BY ra.created_at DESC
+		""",
+		(),
+	)
+
+
 def get_client_by_id_for_user(client_id: str, user: UserDict) -> Optional[Dict[str, Any]]:
 
 	if _is_admin(user):
@@ -304,6 +328,18 @@ def list_users_for_admin() -> List[Dict[str, Any]]:
 		"""
 		SELECT id, name, email, role, phone, status, created_at
 		FROM users
+		ORDER BY created_at DESC
+		""",
+		(),
+	)
+
+
+def list_usersdata() -> List[Dict[str, Any]]:
+
+	return _fetch_all(
+		"""
+		SELECT id, name, email, phone, role, status, created_at
+		FROM usersdata
 		ORDER BY created_at DESC
 		""",
 		(),
