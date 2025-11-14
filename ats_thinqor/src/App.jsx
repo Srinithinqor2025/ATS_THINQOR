@@ -12,6 +12,7 @@ import Clients from "./components/Clients";
 import CandidateApplicationUI from "./components/Candidates";
 import FloatingAiChat from "./components/FloatingAiChat";
 import Users from "./components/users";
+import RecruiterDashboard from "./components/RecruiterDashboard";
 
 export default function App() {
   return (
@@ -31,7 +32,7 @@ export default function App() {
         <Route path="/clients" element={<Clients />} />
         <Route path="/candidates" element={<CandidateApplicationUI />} />
         <Route path="/users" element={<Users />} />
-
+        <Route path="/recruiter-dashboard" element={<RecruiterDashboard />} />
 
 
         {/* Add other routes as needed */}

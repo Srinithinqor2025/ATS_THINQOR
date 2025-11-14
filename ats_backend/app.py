@@ -882,6 +882,49 @@ def get_requirement_allocations(req_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/recruiter/<int:recruiter_id>/requirements", methods=["GET"])
+def get_recruiter_requirements(recruiter_id):
+    """Return all requirement allocations assigned to a recruiter with requirement and client details."""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT
+                ra.id AS allocation_id,
+                ra.requirement_id,
+                ra.created_at AS assigned_date,
+                ra.status,
+                req.title,
+                req.location,
+                req.skills_required,
+                req.experience_required,
+                req.description,
+                req.ctc_range,
+                req.ecto_range,
+                req.status AS requirement_status,
+                req.created_by,
+                client.name AS client_name,
+                assigner.name AS assigned_by
+            FROM requirement_allocations ra
+            JOIN requirements req ON req.id = ra.requirement_id
+            LEFT JOIN clients client ON client.id = req.client_id
+            LEFT JOIN users assigner ON assigner.id = ra.assigned_by
+            WHERE ra.recruiter_id = %s
+            ORDER BY ra.created_at DESC
+        """, (recruiter_id,))
+
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify(rows), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/get-requirements", methods=["GET"])
 def get_requirements():
     conn = get_db_connection()
