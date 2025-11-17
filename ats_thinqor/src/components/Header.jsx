@@ -27,7 +27,7 @@ function Header() {
       {to: "/clients", label:"Clients"},
       { to: "/requirements", label: "Requirements" },
       { to: "/candidates", label: "Candidates" },
-      { to: "/applications", label: "Applications" },
+      
       { to: "/interviews", label: "Interviews" },
       { to: "/offers", label: "Offers" },
       { to: "/reports", label: "Reports" },
@@ -39,7 +39,7 @@ function Header() {
       { to: "/requirements", label: "Requirements" },
       { to: "/create-requirement", label: "Create Requirement" },
       { to: "/candidates", label: "Candidates" },
-      { to: "/applications", label: "Applications" },
+      
       { to: "/interviews", label: "Interviews" },
       { to: "/reports", label: "Reports" },
        // ✅ DM access
