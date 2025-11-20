@@ -5,7 +5,6 @@ import { createRequirement, fetchClients } from "../auth/authSlice";
 export default function CreateRequirements() {
   const dispatch = useDispatch();
   const [jdText, setJdText] = useState("");
-  const [autoData, setAutoData] = useState({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
 
@@ -36,9 +35,9 @@ export default function CreateRequirements() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jd_text: jdText })
       });
-      
+
       const data = await res.json();
-      
+
       if (data.error) {
         setAiError(data.error);
         alert(`AI Error: ${data.error}`);
@@ -125,7 +124,7 @@ export default function CreateRequirements() {
           <textarea
             value={jdText}
             onChange={(e) => setJdText(e.target.value)}
-            placeholder="Paste the complete job description here..."
+            placeholder="Paste the complete job description..."
             className="flex-1 border p-3 rounded h-32 resize-none"
           />
           <button
@@ -161,16 +160,14 @@ export default function CreateRequirements() {
             ))}
         </select>
 
-        <input name="title" placeholder="Job Title" value={form.title} onChange={handleChange} className="border p-2 rounded" required/>
-        <input name="location" placeholder="Location" value={form.location} onChange={handleChange} className="border p-2 rounded" required/>
+        <input name="title" placeholder="Job Title" value={form.title} onChange={handleChange} className="border p-2 rounded" required />
+        <input name="location" placeholder="Location" value={form.location} onChange={handleChange} className="border p-2 rounded" required />
 
-        <input name="experience_required" placeholder="Experience (years)" value={form.experience_required} onChange={handleChange} className="border p-2 rounded"/>
-        <input name="skills_required" placeholder="Skills (comma separated)" value={form.skills_required} onChange={handleChange} className="border p-2 rounded"/>
+        <input name="experience_required" placeholder="Experience (years)" value={form.experience_required} onChange={handleChange} className="border p-2 rounded" />
+        <input name="skills_required" placeholder="Skills (comma separated)" value={form.skills_required} onChange={handleChange} className="border p-2 rounded" />
 
         <input name="ctc_range" placeholder="CTC Range" value={form.ctc_range} onChange={handleChange} className="border p-2 rounded"/>
 
-        <textarea name="description" placeholder="Job Description" value={form.description} onChange={handleChange} className="border p-2 rounded col-span-2 h-24" required></textarea>
-        
         <button className="bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 col-span-2">
           Create Requirement
         </button>

@@ -116,6 +116,7 @@ def initialize_database():
                 skills_required VARCHAR(255),
                 experience_required FLOAT,
                 ctc_range VARCHAR(100),
+
                 status VARCHAR(50) DEFAULT 'OPEN',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_by VARCHAR(100),
@@ -162,6 +163,24 @@ def initialize_database():
     );
 """)
 
+
+         # ---------------- CANDIDATE SCREENING ----------------
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS candidate_screening (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                candidate_id INT,
+                requirement_id VARCHAR(64),
+                ai_score FLOAT,
+                ai_rationale TEXT,
+                recommend VARCHAR(32),
+                red_flags TEXT,
+                model_version VARCHAR(50),
+                status ENUM('PENDING','DONE','ERROR') DEFAULT 'PENDING',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+                FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+            );
+        """)
 
         conn.commit()
         cursor.close()
@@ -295,6 +314,21 @@ def ensure_user_status_defaults():
     except Exception as e:
         print("⚠️ Could not enforce user status defaults:", e)
 
+
+@app.route("/roles", methods=["GET"])
+def roles_endpoint():
+    """
+    Returns JSON: { "roles": ["ADMIN","RECRUITER", ...] }
+    Frontend should call this to populate role dropdowns dynamically.
+    """
+    try:
+        roles = get_allowed_roles()
+        return jsonify({"roles": roles}), 200
+    except Exception as e:
+        return jsonify({"roles": [], "error": str(e)}), 500
+
+
+
 @app.route("/submit-candidate", methods=["POST"])
 def submit_candidate():
     try:
@@ -386,9 +420,9 @@ def get_candidates():
 
         db_name = db_row.get("DATABASE()") if db_row else None
 
-        if not db_name or db_name.lower() != "ats_system":
-            print("⚠ Switching to ats_system database...")
-            cursor.execute("USE ats_system")
+        if not db_name or db_name.lower() != "ats":
+            print("⚠ Switching to ats database...")
+            cursor.execute("USE ats")
             conn.commit()
 
         # 2️⃣ Create table if it doesn't exist
@@ -516,6 +550,52 @@ def update_candidate(id):
         return jsonify({"message": str(e)}), 500
 
 
+@app.route('/get-users', methods=['GET'])
+def get_users():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"message": "Database connection failed"}), 500
+
+        cursor = conn.cursor(dictionary=True)
+
+        # Fetch users with fallback to usersdata
+        cursor.execute("""
+            SELECT 
+                u.id,
+                u.name,
+                u.email,
+                COALESCE(u.phone, ud.phone) AS phone,
+                u.role,
+                COALESCE(u.status, 'ACTIVE') AS status,
+                u.created_at
+            FROM users u
+            LEFT JOIN usersdata ud ON ud.email = u.email
+            ORDER BY u.created_at DESC
+        """)
+
+        users = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        # --- NEW: Validate roles based on ENUM ---
+        allowed_roles = get_allowed_roles()
+
+        for user in users:
+            if allowed_roles and user["role"] not in allowed_roles:
+                user["role_valid"] = False
+                user["allowed_roles"] = allowed_roles
+            else:
+                user["role_valid"] = True
+
+        return jsonify(users), 200
+
+    except Exception as e:
+        return jsonify({"message": "❌ Error fetching users", "error": str(e)}), 500
+
+
+
 @app.route("/delete-candidate/<int:id>", methods=["DELETE"])
 def delete_candidate(id):
     try:
@@ -548,19 +628,26 @@ def create_user():
         if not all([name, email, password]):
             return jsonify({"message": "name, email, and password are required"}), 400
 
+        # --- ADD: Validate role against ENUM ---
+        allowed_roles = get_allowed_roles()
+        if allowed_roles and role not in allowed_roles:
+            return jsonify({
+                "message": f"Invalid role. Allowed roles: {', '.join(allowed_roles)}"
+            }), 400
+
         # Hash the password
         password_hash = hashlib.sha256(password.encode()).hexdigest()
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Insert new user
+        # Insert new user into usersdata
         cursor.execute("""
             INSERT INTO usersdata (name, email, phone, role, password_hash)
             VALUES (%s, %s, %s, %s, %s)
         """, (name, email, phone, role, password_hash))
-        conn.commit()
 
+        conn.commit()
         cursor.close()
         conn.close()
 
@@ -574,39 +661,11 @@ def create_user():
 # -------------------------------
 # API: Get All Users (Admin view)
 # -------------------------------
-@app.route('/get-users', methods=['GET'])
-def get_users():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT 
-                u.id,
-                u.name,
-                u.email,
-                COALESCE(u.phone, ud.phone) AS phone,
-                u.role,
-                COALESCE(u.status, 'ACTIVE') AS status,
-                u.created_at
-            FROM users u
-            LEFT JOIN usersdata ud ON ud.email = u.email
-            ORDER BY u.created_at DESC
-        """)
-        users = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-        return jsonify(users), 200
-    except Exception as e:
-        return jsonify({"message": "❌ Error fetching users", "error": str(e)}), 500
-
-
 @app.route('/users/<int:user_id>/details', methods=['GET'])
 def get_user_details(user_id):
     """
-    Provide a consolidated view of a user's profile, assigned requirements, and owned candidates.
-    This endpoint is intentionally unrestricted so any authorized frontend feature (admin portal, recruiter dashboard,
-    AI assistant, etc.) can fetch rich context for a specific user id.
+    Provide unified view: user profile, assigned requirements, created candidates,
+    and organization stats for ADMINS / DELIVERY_MANAGERS.
     """
     try:
         conn = get_db_connection()
@@ -638,8 +697,17 @@ def get_user_details(user_id):
             conn.close()
             return jsonify({"error": "User not found"}), 404
 
+        # --- NEW: Validate user role against ENUM ---
+        allowed_roles = get_allowed_roles()
+        if allowed_roles and user_row["role"] not in allowed_roles:
+            return jsonify({
+                "error": "Invalid role stored in database",
+                "role_found": user_row["role"],
+                "valid_roles": allowed_roles
+            }), 400
+
         # ------------------------------------------------
-        # 2️⃣ Requirements assigned to the user (if recruiter)
+        # 2️⃣ Requirements assigned to this recruiter
         # ------------------------------------------------
         cursor.execute("""
             SELECT
@@ -686,6 +754,7 @@ def get_user_details(user_id):
 
         response_payload = {
             "user": user_row,
+            "allowed_roles": allowed_roles,          # ⭐ Return ENUM roles for frontend use
             "assigned_requirements": assigned_requirements,
             "assigned_requirement_count": len(assigned_requirements),
             "created_candidates": created_candidates,
@@ -693,7 +762,7 @@ def get_user_details(user_id):
         }
 
         # ------------------------------------------------
-        # 4️⃣ Organization-wide stats for elevated roles
+        # 4️⃣ If ADMIN or DELIVERY_MANAGER → return org-wide summary
         # ------------------------------------------------
         if user_row["role"] in ("ADMIN", "DELIVERY_MANAGER"):
             org_stats = {}
@@ -717,10 +786,43 @@ def get_user_details(user_id):
 
         cursor.close()
         conn.close()
+
         return jsonify(response_payload), 200
+
     except Exception as e:
         print("❌ Error building user details:", e)
         return jsonify({"error": str(e)}), 500
+
+
+
+@app.route("/create-screening-process", methods=["POST"])
+def create_screening_process():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""CREATE TABLE IF NOT EXISTS candidate_screening (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            candidate_id INT NOT NULL,
+            requirement_id VARCHAR(50) NOT NULL,
+            ai_score FLOAT,
+            ai_rationale TEXT,
+            recommend ENUM('SCREENED','REJECTED','SHORTLISTED'),
+            red_flags JSON,
+            model_version VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (candidate_id) REFERENCES candidates(id),
+            FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+    );""")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "✅ Screening process created successfully!"}), 200
+    except Exception as e:
+        print("❌ Error creating screening process:", e)
+        return jsonify({"message": "❌ Error creating screening Table", "error": str(e)}), 500
+
+
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -830,21 +932,57 @@ def update_user_status(user_id: int):
     try:
         data = request.get_json() or {}
         new_status = data.get('status')
-        if new_status is None:
+
+        if not new_status:
             return jsonify({"message": "status is required"}), 400
+
+        # --- NEW: Validate allowed statuses ---
+        allowed_statuses = ["ACTIVE", "INACTIVE"]
+        new_status = new_status.upper()
+
+        if new_status not in allowed_statuses:
+            return jsonify({
+                "message": "Invalid status value",
+                "allowed_statuses": allowed_statuses
+            }), 400
 
         conn = get_db_connection()
         if not conn:
             return jsonify({"message": "Database connection failed"}), 500
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET status = %s WHERE id = %s", (new_status, user_id))
+
+        cursor = conn.cursor(dictionary=True)
+
+        # --- NEW: Check user exists ---
+        cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        user_exists = cursor.fetchone()
+
+        if not user_exists:
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "User not found"}), 404
+
+        # --- Update status ---
+        cursor.execute(
+            "UPDATE users SET status = %s WHERE id = %s",
+            (new_status, user_id)
+        )
         conn.commit()
+
         cursor.close()
         conn.close()
-        return jsonify({"message": "✅ User status updated", "id": user_id, "status": new_status}), 200
+
+        return jsonify({
+            "message": "✅ User status updated",
+            "id": user_id,
+            "status": new_status
+        }), 200
+
     except Exception as e:
-        return jsonify({"message": "❌ Error updating user status", "error": str(e)}), 500
-    
+        return jsonify({
+            "message": "❌ Error updating user status",
+            "error": str(e)
+        }), 500
+   
 #fix allocations schema
 def fix_requirement_allocations_schema():
     try:
@@ -1574,10 +1712,12 @@ if __name__ == '__main__':
     # Import AI routes after env loading (to avoid circular import issues)
     from controllers.ai_chat_controller import register_ai_routes
     from controllers.ai_jd_controller import jd_bp
+    from controllers.ai_screening import screening_bp
     initialize_database()
     ensure_admin_exists()
     ensure_user_status_defaults()
     # Register AI assistant routes without altering existing endpoints
     register_ai_routes(app)
     app.register_blueprint(jd_bp)
+    app.register_blueprint(screening_bp)
     app.run(debug=True)

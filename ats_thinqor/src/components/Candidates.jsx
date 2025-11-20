@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -14,14 +14,16 @@ export default function CandidateApplicationUI() {
     skills: "",
     education: "",
     experience: "",
-    ctc: "",      // NEW
-    ectc: "",     // NEW
+    ctc: "",
+    ectc: "",
   });
 
   const [resume, setResume] = useState(null);
-  const [message, setMessage] = useState("");
   const [candidates, setCandidates] = useState([]);
-  const [editCandidateId, setEditCandidateId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [message, setMessage] = useState("");
+  const [requirementsOptions, setRequirementsOptions] = useState([]);
+  const [requirementsLoading, setRequirementsLoading] = useState(false);
 
   const recruiterIdFromQuery = searchParams.get("recruiterId");
   const createdByUserId = recruiterIdFromQuery
@@ -35,11 +37,12 @@ export default function CandidateApplicationUI() {
         params.append("user_id", user.id);
         params.append("user_role", user.role || "");
       }
-      const response = await fetch(`http://localhost:5000/get-candidates?${params.toString()}`);
-      const data = await response.json();
-      setCandidates(data);
-    } catch (error) {
-      console.error("Error fetching candidates:", error);
+
+      const res = await fetch(`http://localhost:5000/get-candidates?${params}`);
+      const data = await res.json();
+      setCandidates(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch candidates error:", err);
     }
   };
 
@@ -48,7 +51,7 @@ export default function CandidateApplicationUI() {
   }, [user]);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleFileChange = (e) => {
@@ -59,7 +62,8 @@ export default function CandidateApplicationUI() {
     e.preventDefault();
 
     const data = new FormData();
-    Object.entries(formData).forEach(([key, value]) => data.append(key, value));
+    Object.entries(formData).forEach(([k, v]) => data.append(k, v));
+
     if (resume) data.append("resume", resume);
 
     if (!editCandidateId && createdByUserId) {
@@ -67,13 +71,13 @@ export default function CandidateApplicationUI() {
     }
 
     try {
-      let url = "http://localhost:5000/submit-candidate";
-      let method = "POST";
+      const res = await fetch(url, { method, body: data });
+      const result = await res.json();
 
-      if (editCandidateId) {
-        url = `http://localhost:5000/update-candidate/${editCandidateId}`;
-        method = "PUT";
-      }
+      if (res.ok) {
+        setMessage(result.message);
+        resetForm();
+        fetchCandidates();
 
       const response = await fetch(url, { method, body: data });
       const result = await response.json();
@@ -96,14 +100,14 @@ export default function CandidateApplicationUI() {
 
         const fromState = window.history.state?.usr?.from;
         if (fromState === "/recruiter-dashboard") {
-          setTimeout(() => navigate("/recruiter-dashboard"), 1500);
+          setTimeout(() => navigate("/recruiter-dashboard"), 1200);
         }
       } else {
-        setMessage(`❌ ${result.message || "Failed to submit"}`);
+        setMessage(result.message || "Failed");
       }
-    } catch (error) {
-      console.error(error);
-      setMessage("❌ Server not reachable. Check backend.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Server offline. Check backend.");
     }
   };
 
@@ -119,27 +123,107 @@ export default function CandidateApplicationUI() {
       ctc: candidate.ctc || "",
       ectc: candidate.ectc || "",
     });
-    setMessage("✏ Editing candidate...");
+    setMessage("Editing candidate...");
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this candidate?")) return;
+    if (!window.confirm("Delete this candidate?")) return;
+
     try {
-      const response = await fetch(`http://localhost:5000/delete-candidate/${id}`, {
+      const res = await fetch(`http://localhost:5000/delete-candidate/${id}`, {
         method: "DELETE",
       });
-      const result = await response.json();
+      const result = await res.json();
 
-      if (response.ok) {
-        setMessage(`🗑 ${result.message}`);
+      if (res.ok) {
+        setMessage(result.message);
         fetchCandidates();
       } else {
-        setMessage(`❌ ${result.message || "Failed to delete"}`);
+        setMessage(result.message || "Delete failed");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Server error.");
+    }
+  };
+
+  // ----------------------------------------------------
+  // RESET FORM
+  // ----------------------------------------------------
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      skills: "",
+      education: "",
+      experience: "",
+      ctc: "",
+      ectc: "",
+    });
+    setResume(null);
+    setEditId(null);
+  };
+
+  // ----------------------------------------------------
+  // UI SECTION
+  // ----------------------------------------------------
+  const [screenCandidate, setScreenCandidate] = useState(null);
+  const [selectedRequirementId, setSelectedRequirementId] = useState("");
+  const [requirementSearch, setRequirementSearch] = useState("");
+  const [screenError, setScreenError] = useState("");
+  const [showScreenModal, setShowScreenModal] = useState(false);
+  const [screenLoading, setScreenLoading] = useState(false);
+  const [screeningResult, setScreeningResult] = useState(null);
+
+  const filteredRequirements = useMemo(() => {
+    if (!requirementSearch) return requirementsOptions;
+    return requirementsOptions.filter((req) => {
+      const haystack = `${req.title} ${req.location} ${req.client_id || ""}`.toLowerCase();
+      return haystack.includes(requirementSearch.toLowerCase());
+    });
+  }, [requirementsOptions, requirementSearch]);
+
+  const openScreenModal = (candidate) => {
+    setScreenCandidate(candidate);
+    setSelectedRequirementId("");
+    setRequirementSearch("");
+    setScreenError("");
+    setShowScreenModal(true);
+  };
+
+  const handleScreenCandidate = async () => {
+    if (!screenCandidate || !selectedRequirementId) {
+      setScreenError("Please select a requirement to compare against.");
+      return;
+    }
+
+    setScreenLoading(true);
+    setScreenError("");
+
+    try {
+      const response = await fetch("http://localhost:5000/api/screen-candidate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidate_id: screenCandidate.id,
+          requirement_id: selectedRequirementId,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setScreenError(data.error || "AI screening failed");
+      } else {
+        setScreeningResult(data.result);
+        setShowScreenModal(false);
       }
     } catch (error) {
       console.error(error);
-      setMessage("❌ Server not reachable. Check backend.");
+      setScreenError("Server error. Check backend.");
     }
+
+    setScreenLoading(false);
   };
 
   return (
@@ -150,9 +234,9 @@ export default function CandidateApplicationUI() {
           {editCandidateId ? "✏ Edit Candidate" : "🧾 Candidate Application"}
         </h2>
 
-        {message && (
-          <p className="text-center mb-4 font-medium text-green-600">{message}</p>
-        )}
+      {message && (
+        <p className="text-center text-green-600 font-medium">{message}</p>
+      )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -304,10 +388,10 @@ export default function CandidateApplicationUI() {
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4 text-gray-800">📋 Candidate List</h2>
+        <h3 className="text-xl font-semibold mb-4">Candidate List</h3>
 
         {candidates.length === 0 ? (
-          <p className="text-gray-500 text-center">No candidates found.</p>
+          <p className="text-gray-500">No candidates found.</p>
         ) : (
           <table className="w-full border-collapse">
             <thead>
@@ -321,6 +405,7 @@ export default function CandidateApplicationUI() {
                 <th className="p-3 border">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {candidates.map((candidate) => (
                 <tr key={candidate.id} className="hover:bg-gray-50">
@@ -337,11 +422,19 @@ export default function CandidateApplicationUI() {
                     >
                       Edit
                     </button>
+
                     <button
                       onClick={() => handleDelete(candidate.id)}
                       className="bg-red-500 text-white px-3 py-1 rounded"
                     >
                       Delete
+                    </button>
+
+                    <button
+                      onClick={() => openScreenModal(c)}
+                      className="bg-green-600 text-white px-3 py-1 rounded"
+                    >
+                      Screen
                     </button>
                   </td>
                 </tr>
@@ -350,6 +443,154 @@ export default function CandidateApplicationUI() {
           </table>
         )}
       </div>
+
+      {/* Screening Requirement Picker */}
+      {showScreenModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-6 relative">
+            <button
+              className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowScreenModal(false);
+                setScreenError("");
+              }}
+            >
+              ✕
+            </button>
+
+            <h3 className="text-xl font-semibold mb-2">
+              Select Requirement for {screenCandidate?.name}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Choose which requirement you want to compare this candidate against.
+            </p>
+
+            <input
+              type="text"
+              value={requirementSearch}
+              onChange={(e) => setRequirementSearch(e.target.value)}
+              placeholder="Search by title, client, location..."
+              className="w-full border rounded-lg px-3 py-2 mb-3"
+            />
+
+            <div className="max-h-56 overflow-y-auto space-y-2 border rounded-lg p-2">
+              {requirementsLoading ? (
+                <p className="text-center text-gray-500 py-4">Loading requirements...</p>
+              ) : filteredRequirements.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">
+                  No matching requirements found.
+                </p>
+              ) : (
+                filteredRequirements.map((req) => (
+                  <button
+                    key={req.id}
+                    type="button"
+                    onClick={() => setSelectedRequirementId(req.id)}
+                    className={`w-full text-left border rounded-lg px-3 py-2 transition ${
+                      selectedRequirementId === req.id
+                        ? "border-green-500 bg-green-50"
+                        : "border-gray-200 hover:border-gray-400"
+                    }`}
+                  >
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>{req.title}</span>
+                      <span className="text-gray-500">{req.location || "--"}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      ID: {req.id} • Skills: {req.skills_required || "--"}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+
+            {screenError && (
+              <p className="text-red-500 text-sm mt-3">{screenError}</p>
+            )}
+
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                className="px-4 py-2 rounded-lg border"
+                onClick={() => {
+                  setShowScreenModal(false);
+                  setScreenError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-green-600 text-white disabled:opacity-50"
+                onClick={handleScreenCandidate}
+                disabled={screenLoading || !selectedRequirementId}
+              >
+                {screenLoading ? "Screening..." : "Run Screening"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screening Result Modal */}
+      {screeningResult && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 relative">
+            <button
+              className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              onClick={() => setScreeningResult(null)}
+            >
+              ✕
+            </button>
+
+            <h3 className="text-2xl font-semibold mb-4 text-center">
+              🤖 AI Screening Result
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-500">AI Score</p>
+                <p className="text-3xl font-bold text-gray-800">
+                  {screeningResult.score}/100
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Recommendation</p>
+                <span
+                  className={`px-4 py-1 rounded-full text-sm font-semibold ${
+                    screeningResult.recommend === "SHORTLISTED"
+                      ? "bg-green-100 text-green-700"
+                      : screeningResult.recommend === "REJECTED"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-yellow-100 text-yellow-700"
+                  }`}
+                >
+                  {screeningResult.recommend}
+                </span>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500 mb-1">📌 Rationale</p>
+                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                  {screeningResult.rationale?.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              {screeningResult.red_flags?.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">⚠ Red Flags</p>
+                  <ul className="list-disc list-inside text-red-600 space-y-1">
+                    {screeningResult.red_flags.map((item, idx) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
