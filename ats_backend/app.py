@@ -413,12 +413,17 @@ def get_candidates():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
+<<<<<<< Updated upstream
         # 1️⃣ Ensure correct database
+=======
+        # ✅ Ensure correct database
+>>>>>>> Stashed changes
         cursor.execute("SELECT DATABASE()")
         db_row = cursor.fetchone()
         print("🟢 Current DB check:", db_row)
 
         db_name = db_row.get("DATABASE()") if db_row else None
+<<<<<<< Updated upstream
 
         if not db_name or db_name.lower() != "ats_system":
             print("⚠ Switching to ats database...")
@@ -429,6 +434,17 @@ def get_candidates():
         cursor.execute("SHOW TABLES LIKE 'candidates'")
         if not cursor.fetchone():
             print("⚠ 'candidates' table not found — creating now...")
+=======
+        if not db_name or db_name.lower() != "ats_system":
+            print("⚠️ Switching to ats_system database...")
+            cursor.execute("USE ats_system")
+            conn.commit()
+
+        # ✅ Create table if missing
+        cursor.execute("SHOW TABLES LIKE 'candidates'")
+        if not cursor.fetchone():
+            print("⚠️ 'candidates' table not found — creating now...")
+>>>>>>> Stashed changes
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS candidates (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -439,16 +455,21 @@ def get_candidates():
                     education TEXT,
                     experience TEXT,
                     resume_filename VARCHAR(255),
+<<<<<<< Updated upstream
                     ctc VARCHAR(50),
                     ectc VARCHAR(50),
                     created_by INT DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (created_by) REFERENCES users(id)
+=======
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+>>>>>>> Stashed changes
                 )
             """)
             conn.commit()
             print("✅ 'candidates' table created successfully!")
 
+<<<<<<< Updated upstream
         # 3️⃣ Ensure ctc + ectc columns exist
         cursor.execute("""
             SELECT COLUMN_NAME 
@@ -482,12 +503,18 @@ def get_candidates():
         else:
             cursor.execute("SELECT * FROM candidates ORDER BY id DESC")
 
+=======
+        # ✅ Fetch candidates
+        cursor.execute("SELECT * FROM candidates ORDER BY id DESC")
+>>>>>>> Stashed changes
         rows = cursor.fetchall()
         print(f"✅ Found {len(rows)} candidates")
 
         cursor.close()
         conn.close()
+        return jsonify(rows), 200
 
+<<<<<<< Updated upstream
         return jsonify(rows), 200
 
     except Exception as e:
@@ -500,6 +527,14 @@ def get_candidates():
 
 # --------------------------------------------------------
 
+=======
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("❌ Error fetching candidates:", e)
+        return jsonify({"message": str(e)}), 500
+
+>>>>>>> Stashed changes
 @app.route("/update-candidate/<int:id>", methods=["PUT"])
 def update_candidate(id):
     try:
