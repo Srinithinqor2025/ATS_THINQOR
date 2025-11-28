@@ -99,6 +99,38 @@ def chat() -> Any:
 				if tok.upper().startswith("R-") or tok.upper().startswith("REQ-"):
 					req_id = tok.upper().replace("REQ-", "R-")
 					break
+			
+			# If no explicit ID found, try to match by Title/Client from user's accessible list
+			if not req_id:
+				all_reqs = []
+				role = user.get("role", "").upper()
+				if role == "ADMIN":
+					all_reqs = list_requirements_for_admin()
+				elif role == "RECRUITER":
+					all_reqs = list_requirements_for_recruiter(user.get("id"))
+				elif role == "CLIENT":
+					all_reqs = list_requirements_for_client(user.get("client_id"))
+				
+				msg_lower = message.lower()
+				best_match = None
+				
+				for r in all_reqs:
+					title = (r.get("title") or "").lower()
+					client = (r.get("client_name") or "").lower()
+					
+					score = 0
+					if title and title in msg_lower:
+						score += 2
+					if client and client in msg_lower:
+						score += 3
+					
+					if score > 0:
+						if best_match is None or score > best_match[1]:
+							best_match = (r["id"], score)
+				
+				if best_match:
+					req_id = best_match[0]
+
 			# if explicit id present fetch exact, else leave None and let LLM summarize available lists
 			context["requirement"] = get_requirement_by_id_for_user(req_id, user) if req_id else None
 			if req_id:
@@ -107,7 +139,7 @@ def chat() -> Any:
 				context["candidate_progress"] = get_candidate_progress_for_requirement(req_id, user)
 				context["tracking_stats"] = get_tracking_stats_for_requirement(req_id, user)
 				# Check if asking about last round or qualified candidates
-				if any(k in message.lower() for k in ["last round", "final round", "qualified", "passed"]):
+				if any(k in message.lower() for k in ["last round", "final round", "qualified", "passed", "selected", "completed"]):
 					context["candidates_in_last_round"] = get_candidates_in_last_round(req_id, user)
 					context["qualified_candidates"] = get_qualified_candidates(req_id, user)
 			# For admins, if no specific requirement id, include full list

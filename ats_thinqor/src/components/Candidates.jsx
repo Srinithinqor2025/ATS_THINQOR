@@ -202,6 +202,8 @@ export default function CandidateApplicationUI() {
   };
 
   const updateStageStatus = async (candidateId, requirementId, stageId, status, decision) => {
+    console.log("🔄 Updating stage status:", { candidateId, requirementId, stageId, status, decision });
+
     try {
       const res = await fetch("http://localhost:5000/api/update-stage-status", {
         method: "POST",
@@ -215,17 +217,23 @@ export default function CandidateApplicationUI() {
         })
       });
 
+      const responseData = await res.json();
+      console.log("📥 Response:", responseData);
+
       if (res.ok) {
+        console.log("✅ Status updated successfully, refreshing tracker data...");
         // Refresh data
         const refreshRes = await fetch(`http://localhost:5000/api/candidate-tracker/${candidateId}`);
         const data = await refreshRes.json();
         setTrackerData(data);
+        console.log("✅ Tracker data refreshed");
       } else {
-        alert("Failed to update status");
+        console.error("❌ Update failed:", responseData);
+        alert(`Failed to update status: ${responseData.error || 'Unknown error'}`);
       }
     } catch (err) {
-      console.error(err);
-      alert("Error updating status");
+      console.error("❌ Error updating status:", err);
+      alert("Error updating status: " + err.message);
     }
   };
 

@@ -239,6 +239,23 @@ def initialize_database():
                 except Exception as e:
                     print(f"   ❌ Error adding decision: {e}")
 
+            # Fix Unique Key for candidate_progress
+            print("   -> Checking unique key constraints...")
+            try:
+                # Try to drop the old unique key if it exists
+                cursor.execute("ALTER TABLE candidate_progress DROP INDEX uniq_progress")
+                print("   ✅ Dropped old unique key 'uniq_progress'")
+            except Exception:
+                pass # Key might not exist
+
+            try:
+                # Add the correct unique key
+                cursor.execute("ALTER TABLE candidate_progress ADD UNIQUE KEY uniq_progress_stage (candidate_id, requirement_id, stage_id)")
+                print("   ✅ Added unique key 'uniq_progress_stage'")
+            except Exception as e:
+                # print(f"   ℹ️ Unique key 'uniq_progress_stage' might already exist: {e}")
+                pass
+
         # ---------------- CANDIDATE SCREENING ----------------
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS candidate_screening (
@@ -1374,15 +1391,17 @@ def update_stage_status():
         stage_name = s_row[0] if s_row else "Unknown"
         
         # Use INSERT ON DUPLICATE KEY UPDATE to handle both insert and update
+        # Note: Using explicit column names instead of VALUES() for MySQL 8.0+ compatibility
         cursor.execute("""
             INSERT INTO candidate_progress 
             (candidate_id, requirement_id, stage_id, stage_name, status, decision)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE 
-                status = VALUES(status),
-                decision = VALUES(decision),
+                status = %s,
+                decision = %s,
                 updated_at = CURRENT_TIMESTAMP
-        """, (candidate_id, requirement_id, stage_id, stage_name, status, decision or 'NONE'))
+        """, (candidate_id, requirement_id, stage_id, stage_name, status, decision or 'NONE',
+              status, decision or 'NONE'))  # Repeat status and decision for UPDATE clause
             
         conn.commit()
         cursor.close()
@@ -1391,7 +1410,10 @@ def update_stage_status():
         return jsonify({"message": "Status updated"}), 200
         
     except Exception as e:
-        print("❌ Error updating status:", e)
+        print(f"❌ Error updating status: {e}")
+        print(f"   Details: candidate_id={candidate_id}, requirement_id={requirement_id}, stage_id={stage_id}, status={status}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
     
@@ -1928,6 +1950,75 @@ def delete_user(id):
         print("❌ Error deleting user:", e)
         return jsonify({"message": "❌ Error deleting user", "error": str(e)}), 500
 
+
+
+
+# -------------------------------------
+# Reports & Analytics
+# -------------------------------------
+@app.route("/api/reports/stats", methods=["GET"])
+def get_reports_stats():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Requirements Stats
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'OPEN' THEN 1 ELSE 0 END) as open_reqs,
+                SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) as closed_reqs
+            FROM requirements
+        """)
+        req_stats = cursor.fetchone()
+
+        # 2. Candidate Stats
+        cursor.execute("SELECT COUNT(*) as total FROM candidates")
+        total_candidates = cursor.fetchone()['total']
+
+        # 3. Selections (Qualified Candidates)
+        # Candidates who have status='COMPLETED' in the LAST round of any requirement
+        cursor.execute("""
+            SELECT 
+                c.name as candidate_name,
+                r.title as requirement_title,
+                cl.name as client_name,
+                cp.updated_at as selection_date
+            FROM candidate_progress cp
+            JOIN candidates c ON c.id = cp.candidate_id
+            JOIN requirements r ON r.id = cp.requirement_id
+            JOIN requirement_stages rs ON rs.id = cp.stage_id
+            LEFT JOIN clients cl ON cl.id = r.client_id
+            WHERE rs.stage_order = r.no_of_rounds 
+              AND cp.status = 'COMPLETED'
+            ORDER BY cp.updated_at DESC
+        """)
+        selections = cursor.fetchall()
+
+        # 4. Requirements by Client
+        cursor.execute("""
+            SELECT 
+                c.name as client_name,
+                COUNT(r.id) as req_count
+            FROM requirements r
+            LEFT JOIN clients c ON c.id = r.client_id
+            GROUP BY c.name
+        """)
+        client_stats = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "requirements": req_stats,
+            "candidates": {"total": total_candidates},
+            "selections": selections,
+            "client_stats": client_stats
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Error fetching report stats: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # -------------------------------------

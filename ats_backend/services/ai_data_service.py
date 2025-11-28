@@ -594,7 +594,7 @@ def build_user_self_context(user: UserDict) -> Dict[str, Any]:
 
 def get_candidate_progress_for_requirement(requirement_id: str, user: UserDict) -> List[Dict[str, Any]]:
 	"""Get all candidate progress for a specific requirement with stage details."""
-	if not (_is_admin(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
+	if not (_is_admin(user) or _is_recruiter(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
 		return []
 	
 	return _fetch_all(
@@ -621,7 +621,7 @@ def get_candidate_progress_for_requirement(requirement_id: str, user: UserDict) 
 
 def get_candidates_in_last_round(requirement_id: str, user: UserDict) -> List[Dict[str, Any]]:
 	"""Get candidates who are in the last round of a requirement."""
-	if not (_is_admin(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
+	if not (_is_admin(user) or _is_recruiter(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
 		return []
 	
 	return _fetch_all(
@@ -649,7 +649,7 @@ def get_candidates_in_last_round(requirement_id: str, user: UserDict) -> List[Di
 
 def get_qualified_candidates(requirement_id: str, user: UserDict) -> List[Dict[str, Any]]:
 	"""Get candidates who completed/qualified the last round."""
-	if not (_is_admin(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
+	if not (_is_admin(user) or _is_recruiter(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
 		return []
 	
 	return _fetch_all(
@@ -671,12 +671,11 @@ def get_qualified_candidates(requirement_id: str, user: UserDict) -> List[Dict[s
 		ORDER BY cp.updated_at DESC
 		""",
 		(requirement_id,),
-	)
-
+		)
 
 def get_tracking_stats_for_requirement(requirement_id: str, user: UserDict) -> Dict[str, Any]:
 	"""Get tracking statistics for a requirement."""
-	if not (_is_admin(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
+	if not (_is_admin(user) or _is_recruiter(user) or (user or {}).get("role", "").upper() == "DELIVERY_MANAGER"):
 		return {}
 	
 	conn = get_db_connection()
