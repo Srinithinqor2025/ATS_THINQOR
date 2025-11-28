@@ -54,8 +54,24 @@ export default function CandidateApplicationUI() {
   const fetchRequirements = async () => {
     setRequirementsLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/get-requirements");
-      const data = await res.json();
+      let data = [];
+      // If Recruiter, fetch ONLY assigned requirements
+      if (user?.role === "RECRUITER" || user?.role === "recruiter") {
+        const res = await fetch(`http://localhost:5000/users/${user.id}/details`);
+        const userDetails = await res.json();
+        const assigned = userDetails.assigned_requirements || [];
+
+        // Map to ensure we have the correct ID (requirement_id)
+        data = assigned.map((r) => ({
+          ...r,
+          id: r.requirement_id || r.id,
+        }));
+      } else {
+        // Admin/DM: Fetch ALL requirements
+        const res = await fetch("http://localhost:5000/get-requirements");
+        data = await res.json();
+      }
+
       setRequirementsOptions(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to fetch requirements:", err);
