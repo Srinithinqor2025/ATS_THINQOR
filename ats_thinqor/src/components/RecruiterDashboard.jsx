@@ -46,7 +46,7 @@ export default function RecruiterDashboard() {
       setLoadingSummary(true);
 
       const res = await fetch(
-        `http://localhost:5000/users/${user.id}/details`
+        `http://localhost:5001/users/${user.id}/details`
       );
       const data = await res.json();
 

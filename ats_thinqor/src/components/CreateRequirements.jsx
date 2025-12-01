@@ -34,7 +34,7 @@ export default function CreateRequirements() {
     setAiError(null);
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/api/ai/jd-to-requirement", {
+      const res = await fetch("http://localhost:5001/api/ai/jd-to-requirement", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jd_text: jdText }),
