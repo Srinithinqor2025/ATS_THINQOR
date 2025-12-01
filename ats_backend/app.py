@@ -10,6 +10,8 @@ from pathlib import Path
 from werkzeug.utils import secure_filename
 from utils.event_notifier import notify_event
 from utils.auth import get_current_user
+from utils.db import get_db_connection, db_config
+from controllers.reports_controller import reports_bp
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -18,6 +20,7 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(reports_bp)
 
 # -------------------------------------
 # Environment loading (.env preferred; fallback to config.env for local dev)
@@ -38,12 +41,7 @@ else:
 # -------------------------------------
 # Database connection configuration
 # -------------------------------------
-db_config = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'pujitha'),
-    'database': os.getenv('DB_NAME', 'ats_system')
-}
+# Moved to utils/db.py
 
 def initialize_database():
     """Create tables if they do not exist."""
@@ -318,15 +316,7 @@ def get_allowed_roles():
 # -------------------------------------
 # Create a reusable connection function
 # -------------------------------------
-def get_db_connection():
-    try:
-        connection = mysql.connector.connect(**db_config)
-        if connection.is_connected():
-            print("✅ MySQL Database connected successfully!")
-            return connection
-    except Error as e:
-        print("❌ Database connection failed:", e)
-        return None
+# Moved to utils/db.py
 
 # -------------------------------------
 # Routes
@@ -2120,4 +2110,4 @@ if __name__ == '__main__':
     register_ai_routes(app)
     app.register_blueprint(jd_bp)
     app.register_blueprint(screening_bp)
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

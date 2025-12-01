@@ -46,7 +46,7 @@ export default function CandidateApplicationUI() {
         params.append("user_role", user.role || "");
       }
 
-      const res = await fetch(`http://localhost:5000/get-candidates?${params}`);
+      const res = await fetch(`http://localhost:5001/get-candidates?${params}`);
       if (!res.ok) throw new Error("Failed fetching candidates");
       const data = await res.json();
       setCandidates(Array.isArray(data) ? data : []);
@@ -68,7 +68,7 @@ export default function CandidateApplicationUI() {
       let data = [];
       // If Recruiter, fetch ONLY assigned requirements
       if (user?.role === "RECRUITER" || user?.role === "recruiter") {
-        const res = await fetch(`http://localhost:5000/users/${user.id}/details`);
+        const res = await fetch(`http://localhost:5001/users/${user.id}/details`);
         const userDetails = await res.json();
         const assigned = userDetails.assigned_requirements || [];
 
@@ -79,7 +79,7 @@ export default function CandidateApplicationUI() {
         }));
       } else {
         // Admin/DM: Fetch ALL requirements
-        const res = await fetch("http://localhost:5000/get-requirements");
+        const res = await fetch("http://localhost:5001/get-requirements");
         data = await res.json();
       }
 
@@ -115,8 +115,8 @@ export default function CandidateApplicationUI() {
     }
 
     const url = editCandidateId
-      ? `http://localhost:5000/update-candidate/${editCandidateId}`
-      : "http://localhost:5000/submit-candidate";
+      ? `http://localhost:5001/update-candidate/${editCandidateId}`
+      : "http://localhost:5001/submit-candidate";
 
     const method = editCandidateId ? "PUT" : "POST";
 
@@ -170,7 +170,7 @@ export default function CandidateApplicationUI() {
     if (!window.confirm("Delete this candidate?")) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/delete-candidate/${id}`, {
+      const res = await fetch(`http://localhost:5001/delete-candidate/${id}`, {
         method: "DELETE",
       });
       const result = await res.json();
@@ -229,7 +229,7 @@ export default function CandidateApplicationUI() {
     setTrackerLoading(true);
     setTrackerModalOpen(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/candidate-tracker/${candidate.id}`);
+      const res = await fetch(`http://localhost:5001/api/candidate-tracker/${candidate.id}`);
       const data = await res.json();
       setTrackerData(data);
     } catch (err) {
@@ -244,7 +244,7 @@ export default function CandidateApplicationUI() {
     console.log("🔄 Updating stage status:", { candidateId, requirementId, stageId, status, decision });
 
     try {
-      const res = await fetch("http://localhost:5000/api/update-stage-status", {
+      const res = await fetch("http://localhost:5001/api/update-stage-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -262,7 +262,7 @@ export default function CandidateApplicationUI() {
       if (res.ok) {
         console.log("✅ Status updated successfully, refreshing tracker data...");
         // Refresh data
-        const refreshRes = await fetch(`http://localhost:5000/api/candidate-tracker/${candidateId}`);
+        const refreshRes = await fetch(`http://localhost:5001/api/candidate-tracker/${candidateId}`);
         const data = await refreshRes.json();
         setTrackerData(data);
         console.log("✅ Tracker data refreshed");
@@ -311,7 +311,7 @@ export default function CandidateApplicationUI() {
     setScreenError("");
 
     try {
-      const response = await fetch("http://localhost:5000/api/screen-candidate", {
+      const response = await fetch("http://localhost:5001/api/screen-candidate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

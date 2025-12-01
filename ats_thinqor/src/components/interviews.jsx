@@ -59,13 +59,18 @@ export default function InterviewsPage() {
        Only active statuses (PENDING, IN_PROGRESS, COMPLETED)
   ----------------------------*/
   useEffect(() => {
-    fetch("http://127.0.0.1:5000/api/candidate_progress")
+    fetch("http://localhost:5001/api/candidate_progress")
       .then((res) => res.json())
       .then((data) => {
-        const filtered = data.filter((i) =>
-          ["PENDING", "IN_PROGRESS", "COMPLETED"].includes(i.status)
-        );
-        setInterviews(filtered);
+        if (Array.isArray(data)) {
+          const filtered = data.filter((i) =>
+            ["PENDING", "IN_PROGRESS", "COMPLETED"].includes(i.status)
+          );
+          setInterviews(filtered);
+        } else {
+          console.error("API returned non-array:", data);
+          setInterviews([]);
+        }
       })
       .catch((err) => console.error("Failed to fetch data:", err));
   }, []);

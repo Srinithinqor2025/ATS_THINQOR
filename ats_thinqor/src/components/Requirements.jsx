@@ -39,7 +39,7 @@ export default function Requirements() {
   // ---------------------------------------------------
   const loadRecruiters = async () => {
     try {
-      const res = await fetch("http://localhost:5000/get-recruiters");
+      const res = await fetch("http://localhost:5001/get-recruiters");
       const data = await res.json();
       setRecruiters(data);
     } catch (err) {
@@ -55,7 +55,7 @@ export default function Requirements() {
       const all = await Promise.all(
         reqList.map(async (req) => {
           const res = await fetch(
-            `http://localhost:5000/requirements/${req.id}/allocations`
+            `http://localhost:5001/requirements/${req.id}/allocations`
           );
 
           if (!res.ok) return [];
@@ -90,7 +90,7 @@ export default function Requirements() {
     if (!selectedReq || !selectedRecruiter) return;
 
     try {
-      const res = await fetch("http://localhost:5000/assign-requirement", {
+      const res = await fetch("http://localhost:5001/assign-requirement", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -144,7 +144,7 @@ export default function Requirements() {
 
     try {
       const res = await fetch(
-        `http://localhost:5000/delete-requirement/${req.id}`,
+        `http://localhost:5001/delete-requirement/${req.id}`,
         { method: "DELETE" }
       );
 
