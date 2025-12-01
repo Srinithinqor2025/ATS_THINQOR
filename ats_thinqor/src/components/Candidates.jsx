@@ -28,6 +28,7 @@ export default function CandidateApplicationUI() {
 
   const [requirementsOptions, setRequirementsOptions] = useState([]);
   const [requirementsLoading, setRequirementsLoading] = useState(false);
+  
 
   const recruiterIdFromQuery = searchParams.get("recruiterId");
   const createdByUserId = recruiterIdFromQuery
@@ -57,30 +58,40 @@ export default function CandidateApplicationUI() {
 
   useEffect(() => {
     fetchCandidates();
+    fetchRequirements();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // -------------------------------
-  // FETCH REQUIREMENTS (used by screening modal)
-  // -------------------------------
   const fetchRequirements = async () => {
+    setRequirementsLoading(true);
     try {
-      setRequirementsLoading(true);
-      const res = await fetch("http://localhost:5000/get-requirements");
-      if (!res.ok) throw new Error("Failed to fetch requirements");
-      const data = await res.json();
+      let data = [];
+      // If Recruiter, fetch ONLY assigned requirements
+      if (user?.role === "RECRUITER" || user?.role === "recruiter") {
+        const res = await fetch(`http://localhost:5000/users/${user.id}/details`);
+        const userDetails = await res.json();
+        const assigned = userDetails.assigned_requirements || [];
+
+        // Map to ensure we have the correct ID (requirement_id)
+        data = assigned.map((r) => ({
+          ...r,
+          id: r.requirement_id || r.id,
+        }));
+      } else {
+        // Admin/DM: Fetch ALL requirements
+        const res = await fetch("http://localhost:5000/get-requirements");
+        data = await res.json();
+      }
+
       setRequirementsOptions(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Fetch requirements error:", err);
+      console.error("Failed to fetch requirements:", err);
       setRequirementsOptions([]);
     } finally {
       setRequirementsLoading(false);
     }
   };
 
-  // -------------------------------
-  // Handlers
-  // -------------------------------
   const handleChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
@@ -105,23 +116,26 @@ export default function CandidateApplicationUI() {
 
     const url = editCandidateId
       ? `http://localhost:5000/update-candidate/${editCandidateId}`
-      : "http://localhost:5000/add-candidate";
+      : "http://localhost:5000/submit-candidate";
 
     const method = editCandidateId ? "PUT" : "POST";
 
     try {
-      const response = await fetch(url, { method, body: data });
-      const result = await response.json();
+      const res = await fetch(url, { method, body: data });
+      const result = await res.json();
 
-      if (response.ok) {
+      if (res.ok) {
         setMessage(result.message || "Success");
-        fetchCandidates();
-        resetForm();
 
+        // If returning from recruiter dashboard, auto redirect
         const fromState = window.history.state?.usr?.from;
         if (fromState === "/recruiter-dashboard") {
           setTimeout(() => navigate("/recruiter-dashboard"), 1200);
         }
+
+        // Refresh list + clear form
+        fetchCandidates();
+        resetForm();
       } else {
         setMessage(result.message || "Failed");
       }
@@ -202,6 +216,66 @@ export default function CandidateApplicationUI() {
   const [screenLoading, setScreenLoading] = useState(false);
   const [screeningResult, setScreeningResult] = useState(null);
 
+  // ----------------------------------------------------
+  // TRACKER SECTION
+  // ----------------------------------------------------
+  const [trackerModalOpen, setTrackerModalOpen] = useState(false);
+  const [trackerData, setTrackerData] = useState([]);
+  const [trackerLoading, setTrackerLoading] = useState(false);
+  const [trackCandidate, setTrackCandidate] = useState(null);
+
+  const handleTrack = async (candidate) => {
+    setTrackCandidate(candidate);
+    setTrackerLoading(true);
+    setTrackerModalOpen(true);
+    try {
+      const res = await fetch(`http://localhost:5000/api/candidate-tracker/${candidate.id}`);
+      const data = await res.json();
+      setTrackerData(data);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to load tracker data");
+    } finally {
+      setTrackerLoading(false);
+    }
+  };
+
+  const updateStageStatus = async (candidateId, requirementId, stageId, status, decision) => {
+    console.log("🔄 Updating stage status:", { candidateId, requirementId, stageId, status, decision });
+
+    try {
+      const res = await fetch("http://localhost:5000/api/update-stage-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidate_id: candidateId,
+          requirement_id: requirementId,
+          stage_id: stageId,
+          status,
+          decision,
+        }),
+      });
+
+      const responseData = await res.json();
+      console.log("📥 Response:", responseData);
+
+      if (res.ok) {
+        console.log("✅ Status updated successfully, refreshing tracker data...");
+        // Refresh data
+        const refreshRes = await fetch(`http://localhost:5000/api/candidate-tracker/${candidateId}`);
+        const data = await refreshRes.json();
+        setTrackerData(data);
+        console.log("✅ Tracker data refreshed");
+      } else {
+        console.error("❌ Update failed:", responseData);
+        alert(`Failed to update status: ${responseData.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("❌ Error updating status:", err);
+      alert("Error updating status: " + err.message);
+    }
+  };
+
   const filteredRequirements = useMemo(() => {
     if (!requirementSearch) return requirementsOptions || [];
     return (requirementsOptions || []).filter((req) =>
@@ -263,288 +337,427 @@ export default function CandidateApplicationUI() {
 
   return (
     <div className="max-w-5xl mx-auto p-8 bg-white shadow-lg rounded-2xl space-y-10">
+      <div>
+        <h2 className="text-2xl font-semibold mb-6 text-gray-800 text-center">
+          {editCandidateId ? "✏ Edit Candidate" : "🧾 Candidate Application"}
+        </h2>
 
-      {/* ---------------------- FORM TITLE ---------------------- */}
-      <h2 className="text-2xl font-semibold text-center mb-6 text-gray-800">
-        {editCandidateId ? "✏ Edit Candidate" : "🧾 Candidate Application"}
-      </h2>
+        {message && <p className="text-center text-green-600 font-medium">{message}</p>}
 
-      {message && (
-        <p className="text-center text-green-600 font-medium">{message}</p>
-      )}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium mb-1">Full Name</label>
+              <input
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                type="text"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+                required
+              />
+            </div>
 
-      {/* ---------------------- FORM ---------------------- */}
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium mb-1">Email</label>
+              <input
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                type="email"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+                required
+              />
+            </div>
 
-          <InputField label="Full Name" name="name" value={formData.name} onChange={handleChange} required />
-          <InputField label="Email" name="email" value={formData.email} onChange={handleChange} type="email" required />
-          <InputField label="Phone" name="phone" value={formData.phone} onChange={handleChange} type="tel" />
-          <InputField label="Skills" name="skills" value={formData.skills} onChange={handleChange} />
+            <div>
+              <label className="block text-sm font-medium mb-1">Phone</label>
+              <input
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                type="tel"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+              />
+            </div>
 
-          <InputField label="Current CTC (LPA)" name="ctc" value={formData.ctc} onChange={handleChange} type="number" />
-          <InputField label="Expected CTC (LPA)" name="ectc" value={formData.ectc} onChange={handleChange} type="number" />
-        </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Skills</label>
+              <input
+                name="skills"
+                value={formData.skills}
+                onChange={handleChange}
+                type="text"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+              />
+            </div>
 
-        <TextAreaField label="Education Summary" name="education" value={formData.education} onChange={handleChange} />
-        <TextAreaField label="Experience Summary" name="experience" value={formData.experience} onChange={handleChange} />
+            <div>
+              <label className="block text-sm font-medium mb-1">Current CTC (LPA)</label>
+              <input
+                name="ctc"
+                value={formData.ctc}
+                onChange={handleChange}
+                type="number"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+              />
+            </div>
 
-        {/* Resume Upload */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Upload Resume</label>
-          <div className="border-dashed border-2 border-gray-300 rounded-lg p-6 text-center">
-            <input type="file" id="resume" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
-            <label htmlFor="resume" className="cursor-pointer text-green-600 hover:underline">
-              {editCandidateId ? "Upload new resume (optional)" : "Click to upload resume"}
-            </label>
-            {resume && <p className="text-sm text-gray-700 mt-2">{resume.name}</p>}
+            <div>
+              <label className="block text-sm font-medium mb-1">Expected CTC (LPA)</label>
+              <input
+                name="ectc"
+                value={formData.ectc}
+                onChange={handleChange}
+                type="number"
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="flex justify-between mt-6">
-          <button type="submit" className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
-            {editCandidateId ? "Update Candidate" : "Submit Application"}
-          </button>
+          <div>
+            <label className="block text-sm font-medium mb-1">Education Summary</label>
+            <textarea
+              name="education"
+              value={formData.education}
+              onChange={handleChange}
+              rows="3"
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-400"
+            />
+          </div>
 
-          <button
-            type="button"
-            onClick={resetForm}
-            className="border border-gray-300 px-6 py-2 rounded-lg"
-          >
-            Clear
-          </button>
-        </div>
-      </form>
+          <div>
+            <label className="block text-sm font-medium mb-1">Experience Summary</label>
+            <textarea
+              name="experience"
+              value={formData.experience}
+              onChange={handleChange}
+              rows="3"
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-400"
+            />
+          </div>
 
-      {/* ---------------------- CANDIDATE LIST ---------------------- */}
-      <h3 className="text-xl font-semibold mb-4">Candidate List</h3>
+          {/* Resume Upload */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Upload Resume</label>
+            <div className="border-dashed border-2 border-gray-300 rounded-lg p-6 text-center">
+              <input type="file" id="resume" className="hidden" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+              <label htmlFor="resume" className="cursor-pointer text-green-600 hover:underline">
+                {editCandidateId ? "Upload new resume (optional)" : "Click to upload resume"}
+              </label>
+              {resume && <p className="text-sm text-gray-700 mt-2">{resume.name}</p>}
+            </div>
+          </div>
 
-      {candidates.length === 0 ? (
-        <p className="text-gray-500">No candidates found.</p>
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-green-100 text-left">
-              <th className="p-3 border">Name</th>
-              <th className="p-3 border">Email</th>
-              <th className="p-3 border">Phone</th>
-              <th className="p-3 border">Skills</th>
-              <th className="p-3 border">CTC</th>
-              <th className="p-3 border">ECTC</th>
-              <th className="p-3 border">Actions</th>
-            </tr>
-          </thead>
+          <div className="flex justify-between mt-6">
+            <button type="submit" className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+              {editCandidateId ? "Update Candidate" : "Submit Application"}
+            </button>
 
-          <tbody>
-            {candidates.map((candidate) => (
-              <tr key={candidate.id} className="hover:bg-gray-50">
-                <td className="p-3 border">{candidate.name}</td>
-                <td className="p-3 border">{candidate.email}</td>
-                <td className="p-3 border">{candidate.phone}</td>
-                <td className="p-3 border">{candidate.skills}</td>
-                <td className="p-3 border">{candidate.ctc}</td>
-                <td className="p-3 border">{candidate.ectc}</td>
-                <td className="p-3 border flex gap-2">
+            <button type="button" onClick={resetForm} className="border border-gray-300 px-6 py-2 rounded-lg">
+              Clear
+            </button>
+          </div>
+        </form>
 
-                  <button onClick={() => handleEdit(candidate)} className="bg-blue-500 text-white px-3 py-1 rounded">
-                    Edit
-                  </button>
+        {/* ---------------------- CANDIDATE LIST ---------------------- */}
+        <h3 className="text-xl font-semibold mb-4">Candidate List</h3>
 
-                  <button onClick={() => handleDelete(candidate.id)} className="bg-red-500 text-white px-3 py-1 rounded">
-                    Delete
-                  </button>
+        {candidates.length === 0 ? (
+          <p className="text-gray-500">No candidates found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-green-100 text-left">
+                  <th className="p-3 border">Name</th>
+                  <th className="p-3 border">Email</th>
+                  <th className="p-3 border">Phone</th>
+                  <th className="p-3 border">Skills</th>
+                  <th className="p-3 border">CTC</th>
+                  <th className="p-3 border">ECTC</th>
+                  <th className="p-3 border">Actions</th>
+                </tr>
+              </thead>
 
-                  <button onClick={() => openScreenModal(candidate)} className="bg-green-600 text-white px-3 py-1 rounded">
-                    Screen
-                  </button>
+              <tbody>
+                {candidates.map((candidate) => (
+                  <tr key={candidate.id} className="hover:bg-gray-50 border-b">
+                    <td className="p-3 border">{candidate.name}</td>
+                    <td className="p-3 border">{candidate.email}</td>
+                    <td className="p-3 border">{candidate.phone}</td>
+                    <td className="p-3 border">{candidate.skills}</td>
+                    <td className="p-3 border">{candidate.ctc}</td>
+                    <td className="p-3 border">{candidate.ectc}</td>
+                    <td className="p-3 border flex gap-2">
+                      <button onClick={() => handleEdit(candidate)} className="bg-blue-500 text-white px-3 py-1 rounded">
+                        Edit
+                      </button>
 
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+                      <button onClick={() => handleDelete(candidate.id)} className="bg-red-500 text-white px-3 py-1 rounded">
+                        Delete
+                      </button>
+
+                      <button onClick={() => openScreenModal(candidate)} className="bg-green-600 text-white px-3 py-1 rounded">
+                        Screen
+                      </button>
+
+                      <button onClick={() => handleTrack(candidate)} className="bg-purple-600 text-white px-3 py-1 rounded">
+                        Track
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* ---------------------- SCREENING MODAL ---------------------- */}
       {showScreenModal && (
-        <ScreeningModal
-          screenCandidate={screenCandidate}
-          requirementSearch={requirementSearch}
-          setRequirementSearch={setRequirementSearch}
-          filteredRequirements={filteredRequirements}
-          requirementsLoading={requirementsLoading}
-          selectedRequirementId={selectedRequirementId}
-          setSelectedRequirementId={setSelectedRequirementId}
-          screenError={screenError}
-          setShowScreenModal={setShowScreenModal}
-          handleScreenCandidate={handleScreenCandidate}
-          screenLoading={screenLoading}
-        />
-      )}
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-6 relative">
+            <button
+              className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setShowScreenModal(false);
+                setScreenError("");
+              }}
+            >
+              ✕
+            </button>
 
-      {/* ---------------------- SCREENING RESULT MODAL ---------------------- */}
-      {screeningResult && (
-        <ScreeningResultModal
-          screeningResult={screeningResult}
-          setScreeningResult={setScreeningResult}
-        />
-      )}
-    </div>
-  );
-}
+            <h3 className="text-xl font-semibold mb-2">Select Requirement for {screenCandidate?.name}</h3>
+            <p className="text-sm text-gray-500 mb-4">Choose which requirement you want to compare this candidate against.</p>
 
-/* ------------------------------------------------------------
-   SMALL INPUT COMPONENTS
------------------------------------------------------------- */
-function InputField({ label, name, value, onChange, type = "text", required }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <input
-        name={name}
-        value={value}
-        onChange={onChange}
-        type={type}
-        required={required}
-        className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-green-400"
-      />
-    </div>
-  );
-}
+            <input
+              type="text"
+              value={requirementSearch}
+              onChange={(e) => setRequirementSearch(e.target.value)}
+              placeholder="Search by title, client, location..."
+              className="w-full border rounded-lg px-3 py-2 mb-3"
+            />
 
-function TextAreaField({ label, name, value, onChange }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <textarea
-        name={name}
-        value={value}
-        onChange={onChange}
-        rows="3"
-        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-400"
-      />
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------
-   SCREENING MODAL
------------------------------------------------------------- */
-function ScreeningModal({
-  screenCandidate,
-  requirementSearch,
-  setRequirementSearch,
-  filteredRequirements,
-  requirementsLoading,
-  selectedRequirementId,
-  setSelectedRequirementId,
-  screenError,
-  setShowScreenModal,
-  handleScreenCandidate,
-  screenLoading,
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-6 relative">
-        <button
-          className="absolute right-4 top-4 text-gray-500 hover:text-gray-700"
-          onClick={() => setShowScreenModal(false)}
-        >
-          ✕
-        </button>
-
-        <h3 className="text-xl font-semibold mb-2">Select Requirement for {screenCandidate?.name}</h3>
-        <p className="text-sm text-gray-500 mb-4">Choose which requirement you want to compare this candidate against.</p>
-
-        <input
-          type="text"
-          value={requirementSearch}
-          onChange={(e) => setRequirementSearch(e.target.value)}
-          placeholder="Search by title, client, location..."
-          className="w-full border rounded-lg px-3 py-2 mb-3"
-        />
-
-        <div className="max-h-56 overflow-y-auto space-y-2 border rounded-lg p-2">
-          {requirementsLoading ? (
-            <p className="text-center text-gray-500 py-4">Loading requirements...</p>
-          ) : filteredRequirements.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">No matching requirements found.</p>
-          ) : (
-            filteredRequirements.map((req) => (
-              <button
-                key={req.id}
-                type="button"
-                onClick={() => setSelectedRequirementId(req.id)}
-                className={`w-full text-left border rounded-lg px-3 py-2 transition ${
-                  selectedRequirementId === req.id ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-400"
-                }`}
-              >
-                <div className="flex justify-between text-sm font-medium">
-                  <span>{req.title}</span>
-                  <span className="text-gray-500">{req.location || "--"}</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">ID: {req.id} • Skills: {req.skills_required || "--"}</p>
-              </button>
-            ))
-          )}
-        </div>
-
-        {screenError && <p className="text-red-500 text-sm mt-3">{screenError}</p>}
-
-        <div className="flex justify-end gap-3 mt-4">
-          <button className="px-4 py-2 rounded-lg border" onClick={() => setShowScreenModal(false)}>Cancel</button>
-          <button className="px-4 py-2 rounded-lg bg-green-600 text-white disabled:opacity-50" onClick={handleScreenCandidate} disabled={screenLoading || !selectedRequirementId}>{screenLoading ? "Screening..." : "Run Screening"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------
-   SCREENING RESULT MODAL
------------------------------------------------------------- */
-function ScreeningResultModal({ screeningResult, setScreeningResult }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 relative">
-        <button className="absolute right-4 top-4 text-gray-500 hover:text-gray-700" onClick={() => setScreeningResult(null)}>✕</button>
-
-        <h3 className="text-2xl font-semibold mb-4 text-center">🤖 AI Screening Result</h3>
-
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-500">AI Score</p>
-            <p className="text-3xl font-bold text-gray-800">{screeningResult.score}/100</p>
-          </div>
-
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Recommendation</p>
-            <span className={`px-4 py-1 rounded-full text-sm font-semibold ${
-              screeningResult.recommend === "SHORTLISTED"
-                ? "bg-green-100 text-green-700"
-                : screeningResult.recommend === "REJECTED"
-                ? "bg-red-100 text-red-700"
-                : "bg-yellow-100 text-yellow-700"
-            }`}>{screeningResult.recommend}</span>
-          </div>
-
-          <div>
-            <p className="text-sm text-gray-500 mb-1">📌 Rationale</p>
-            <ul className="list-disc list-inside text-gray-700 space-y-1">
-              {screeningResult.rationale?.map((item, idx) => (<li key={idx}>{item}</li>))}
-            </ul>
-          </div>
-
-          {screeningResult.red_flags?.length > 0 && (
-            <div>
-              <p className="text-sm text-gray-500 mb-1">⚠ Red Flags</p>
-              <ul className="list-disc list-inside text-red-600 space-y-1">
-                {screeningResult.red_flags.map((item, idx) => (<li key={idx}>{item}</li>))}
-              </ul>
+            <div className="max-h-56 overflow-y-auto space-y-2 border rounded-lg p-2">
+              {requirementsLoading ? (
+                <p className="text-center text-gray-500 py-4">Loading requirements...</p>
+              ) : filteredRequirements.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No matching requirements found.</p>
+              ) : (
+                filteredRequirements.map((req) => (
+                  <button
+                    key={req.id}
+                    type="button"
+                    onClick={() => setSelectedRequirementId(req.id)}
+                    className={`w-full text-left border rounded-lg px-3 py-2 transition ${selectedRequirementId === req.id ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-400"}`}
+                  >
+                    <div className="flex justify-between text-sm font-medium">
+                      <span>{req.title}</span>
+                      <span className="text-gray-500">{req.location || "--"}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">ID: {req.id} • Skills: {req.skills_required || "--"}</p>
+                  </button>
+                ))
+              )}
             </div>
-          )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowScreenModal(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={handleScreenCandidate} className="px-4 py-2 bg-blue-600 text-white rounded">
+                {screenLoading ? "Screening..." : "Run Screening"}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Screening Result Modal (if your app uses a separate component you can keep that) */}
+      {screeningResult && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 relative">
+            <button className="absolute right-4 top-4 text-gray-500 hover:text-gray-700" onClick={() => setScreeningResult(null)}>✕</button>
+            <h3 className="text-2xl font-semibold mb-4 text-center">🤖 AI Screening Result</h3>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-500">AI Score</p>
+                <p className="text-3xl font-bold text-gray-800">{screeningResult.score}/100</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Recommendation</p>
+                <span className={`px-4 py-1 rounded-full text-sm font-semibold ${screeningResult.recommend === "SHORTLISTED" ? "bg-green-100 text-green-700" : screeningResult.recommend === "REJECTED" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}`}>
+                  {screeningResult.recommend}
+                </span>
+              </div>
+
+              <div>
+                <p className="text-sm text-gray-500 mb-1">📌 Rationale</p>
+                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                  {screeningResult.rationale?.map((item, idx) => <li key={idx}>{item}</li>)}
+                </ul>
+              </div>
+
+              {screeningResult.red_flags?.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">⚠ Red Flags</p>
+                  <ul className="list-disc list-inside text-red-600 space-y-1">
+                    {screeningResult.red_flags.map((item, idx) => <li key={idx}>{item}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tracker Modal */}
+{/* Tracker Modal */}
+{trackerModalOpen && (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl p-8 relative max-h-[90vh] overflow-y-auto">
+
+      {/* Close Button */}
+      <button
+        onClick={() => setTrackerModalOpen(false)}
+        className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 text-2xl"
+      >
+        ✕
+      </button>
+
+      {/* Header */}
+      <h3 className="text-3xl font-bold mb-10 text-gray-900 border-b pb-4">
+        Interview Progress Tracking
+      </h3>
+
+      {/* Loading State */}
+      {trackerLoading ? (
+        <p className="text-center text-gray-500 py-16 text-lg">Loading tracker details...</p>
+      ) : trackerData.length === 0 ? (
+        <p className="text-center text-gray-500 py-16 text-lg">
+          No active tracking found for this candidate.
+        </p>
+      ) : (
+        <div className="space-y-14">
+
+          {trackerData.map((item, idx) => (
+            <div
+              key={idx}
+              className="bg-gray-50 rounded-2xl border p-8 shadow-sm"
+            >
+              {/* Requirement Header */}
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h4 className="text-2xl font-semibold text-gray-800">
+                    {item.requirement.title}
+                  </h4>
+                  <p className="text-sm text-gray-500">
+                    {item.requirement.client_name} • {item.requirement.no_of_rounds} Rounds
+                  </p>
+                </div>
+                <span className="bg-indigo-100 text-indigo-700 px-4 py-1 rounded-full font-semibold text-xs">
+                  ID: {item.requirement.id}
+                </span>
+              </div>
+
+              {/* Timeline */}
+              <div className="border-l-2 border-gray-300 ml-5 space-y-10">
+                {item.stages.map((stage, index) => {
+                  const isActive = stage.status === "IN_PROGRESS";
+                  const isCompleted = stage.status === "COMPLETED";
+                  const isRejected = stage.status === "REJECTED";
+
+                  const dotColor = isCompleted
+                    ? "bg-green-500"
+                    : isRejected
+                    ? "bg-red-500"
+                    : isActive
+                    ? "bg-blue-500"
+                    : "bg-gray-400";
+
+                  const cardBorder =
+                    isCompleted
+                      ? "border-green-300"
+                      : isRejected
+                      ? "border-red-300"
+                      : isActive
+                      ? "border-blue-300"
+                      : "border-gray-200";
+
+                  return (
+                    <div key={stage.stage_id} className="relative pl-10">
+
+                      {/* Timeline Dot */}
+                      <div
+                        className={`absolute left-[-13px] top-1 w-6 h-6 rounded-full border-4 border-white shadow ${dotColor}`}
+                      ></div>
+
+                      {/* Stage Card */}
+                      <div
+                        className={`bg-white rounded-xl border ${cardBorder} p-5 shadow-sm transition`}
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <h5 className="text-lg font-semibold text-gray-800">
+                            {stage.stage_name}
+                          </h5>
+
+                          {/* Status Badge */}
+                          <span
+                            className={`
+                              px-3 py-1 text-xs font-semibold rounded-full
+                              ${
+                                isCompleted
+                                  ? "bg-green-100 text-green-700"
+                                  : isRejected
+                                  ? "bg-red-100 text-red-700"
+                                  : isActive
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-gray-100 text-gray-700"
+                              }
+                            `}
+                          >
+                            {stage.status}
+                          </span>
+                        </div>
+
+                        {/* Stage Decision */}
+                        <p className="text-gray-600 text-sm mb-4">
+                          {stage.decision || "No decision provided"}
+                        </p>
+
+                        {/* Update Dropdown */}
+                        <select
+                          className="border rounded-lg px-3 py-2 text-sm"
+                          value={stage.status}
+                          onChange={(e) =>
+                            updateStageStatus(
+                              trackCandidate.id,
+                              item.requirement.id,
+                              stage.stage_id,
+                              e.target.value,
+                              stage.decision
+                            )
+                          }
+                        >
+                          <option value="PENDING">Pending</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="COMPLETED">Completed</option>
+                          <option value="REJECTED">Rejected</option>
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
     </div>
   );
 }
