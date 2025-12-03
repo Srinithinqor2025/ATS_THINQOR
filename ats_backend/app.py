@@ -1685,13 +1685,45 @@ def delete_requirement(req_id):
         if not result:
             return jsonify({"error": "Requirement not found"}), 404
 
-        # Delete allocations related to this requirement
+        # Delete related records in the correct order (child tables first)
+        
+        # 1. Delete from candidate_progress (references requirement_id and stage_id)
+        cursor.execute(
+            "DELETE FROM candidate_progress WHERE requirement_id = %s",
+            (req_id,)
+        )
+        
+        # 2. Delete from candidate_screening (references requirement_id)
+        cursor.execute(
+            "DELETE FROM candidate_screening WHERE requirement_id = %s",
+            (req_id,)
+        )
+        
+        # 3. Delete from assesment_queue (references requirement_id)
+        cursor.execute(
+            "DELETE FROM assesment_queue WHERE requirement_id = %s",
+            (req_id,)
+        )
+        
+        # 4. Delete from interviews (references requirement_id)
+        cursor.execute(
+            "DELETE FROM interviews WHERE requirement_id = %s",
+            (req_id,)
+        )
+        
+        # 5. Delete from requirement_stages (references requirement_id)
+        cursor.execute(
+            "DELETE FROM requirement_stages WHERE requirement_id = %s",
+            (req_id,)
+        )
+        
+        # 6. Delete from requirement_allocations (references requirement_id)
         cursor.execute(
             "DELETE FROM requirement_allocations WHERE requirement_id = %s",
             (req_id,)
         )
 
-        # Delete requirement
+        # 7. Finally, delete the requirement itself
         cursor.execute(
             "DELETE FROM requirements WHERE id = %s",
             (req_id,)
@@ -1699,14 +1731,17 @@ def delete_requirement(req_id):
 
         conn.commit()
 
-        return jsonify({"message": "Requirement deleted successfully"}), 200
+        return jsonify({"message": "Requirement and all related records deleted successfully"}), 200
 
     except Exception as e:
+        conn.rollback()
+        print(f"❌ Error deleting requirement: {e}")
         return jsonify({"error": str(e)}), 500
 
     finally:
         cursor.close()
         conn.close()
+
 
 @app.route('/create-client', methods=['POST'])
 def create_client():
