@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import axios from "axios";
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "http://localhost:5001";
 
 export default function FloatingAiChat() {
 	const user = useSelector((s) => s.auth.user);

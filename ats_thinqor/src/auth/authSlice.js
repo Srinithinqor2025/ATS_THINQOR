@@ -4,7 +4,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "http://localhost:5001";
 
 // ------------------------------------------------------------------
 // LOGIN
@@ -148,7 +148,7 @@ export const deleteRequirement = createAsyncThunk(
   "auth/deleteRequirement",
   async (reqId, { rejectWithValue }) => {
     try {
-      const res = await fetch(`http://localhost:5000/delete-requirement/${reqId}`,
+      const res = await fetch(`http://localhost:5001/delete-requirement/${reqId}`,
         {
           method: "DELETE",
         }

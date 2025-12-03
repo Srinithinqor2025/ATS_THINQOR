@@ -15,7 +15,7 @@ import {
  * - Users fetched via Redux
  */
 
-const API_BASE = "http://127.0.0.1:5000"; // backend base URL
+const API_BASE = "http://localhost:5001"; // backend base URL
 
 export default function Users() {
   const dispatch = useDispatch();
