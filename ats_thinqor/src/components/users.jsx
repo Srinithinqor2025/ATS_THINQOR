@@ -183,13 +183,20 @@ export default function Users() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this user?")) return;
-    const res = await dispatch(deleteUser({ id, requester_email: currentUser?.email }));
-    if (res.meta?.requestStatus === "fulfilled") {
-      dispatch(fetchUsers());
-    }
-  };
+ const handleDelete = async (user) => {
+  if (!window.confirm(`Are you sure you want to delete ${user.name}?`)) return;
+
+  const res = await dispatch(
+    deleteUser({
+      id: user.id,
+      account_type: user.account_type,
+    })
+  );
+
+  if (res.meta?.requestStatus === "fulfilled") {
+    dispatch(fetchUsers());
+  }
+};
 
   const roleToColor = (role = "") => {
     const r = role.toLowerCase();
@@ -410,7 +417,7 @@ export default function Users() {
             </thead>
             <tbody>
               {filtered.map((u) => (
-                <tr key={u.id} className="border-b hover:bg-gray-50">
+                <tr key={`${u.account_type}-${u.id}`} className="border-b hover:bg-gray-50">
                   <td className="py-4 px-2 flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-teal-400 flex items-center justify-center text-white font-medium">
                       {initials(u.name)}
@@ -461,7 +468,7 @@ export default function Users() {
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(u.id)}
+                            onClick={() => handleDelete(u)}
                             className="inline-flex items-center gap-2 bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
                             title="Delete User"
                           >

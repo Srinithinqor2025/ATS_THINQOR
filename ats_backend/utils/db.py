@@ -40,7 +40,7 @@ def get_db_config():
     return {
         "host": os.getenv("DB_HOST", "localhost"),
         "user": os.getenv("DB_USER", "root"),
-        "password": os.getenv("DB_PASSWORD", "5757"),
+        "password": os.getenv("DB_PASSWORD", "Jaikrishna@0612"),
         "database": os.getenv("DB_NAME", "ats_system"),
         "autocommit": False,
         # "use_pure": False # pymysql does not use this

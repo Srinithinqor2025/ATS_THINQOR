@@ -497,16 +497,26 @@ export const deleteUser = createAsyncThunk(
       const state = getState();
       const token = state.auth.user?.token;
 
-      // Arg might be id or object, just extract id
       const id = typeof arg === "object" ? arg.id : arg;
+      const account_type =
+        typeof arg === "object" ? arg.account_type : "REGISTERED";
 
-      const config = {};
-      if (token) config.headers = { Authorization: `Bearer ${token}` };
+      const config = {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      };
 
-      const res = await axios.delete(`${API_URL}/delete-user/${id}`, config);
-      return { id, message: res.data.message };
+      const url =
+        account_type === "INVITED"
+          ? `${API_URL}/delete-invited-user/${id}`
+          : `${API_URL}/delete-user/${id}`;
+
+      const res = await axios.delete(url, config);
+
+      return { id, account_type, message: res.data.message };
     } catch (err) {
-      return rejectWithValue(err.response?.data?.message || "Failed to delete user");
+      return rejectWithValue(
+        err.response?.data?.message || "Failed to delete user"
+      );
     }
   }
 );

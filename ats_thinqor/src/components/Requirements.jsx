@@ -10,6 +10,7 @@ import {
   deleteRequirement,
   updateRequirement,
 } from "../auth/authSlice";
+import { Plus, Search, Filter, Edit2, Trash2, Users, Clock, DollarSign, MapPin, BookOpen, Eye } from "lucide-react";
 
 export default function Requirements() {
   const dispatch = useDispatch();
@@ -37,6 +38,10 @@ export default function Requirements() {
   // --- Edit Modal ---
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState(null);
+
+  // --- View Modal ---
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewReq, setViewReq] = useState(null);
 
   useEffect(() => {
     dispatch(fetchRequirements());
@@ -120,188 +125,330 @@ export default function Requirements() {
     );
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* HEADER */}
-      <div>
-        <div className="bg-blue-100 rounded-2xl shadow-sm p-6 mb-6">
-          <h2 className="text-3xl font-bold text-black">Requisition</h2>
-          <p className="text-gray-500 mt-2">
-            Manage and track all your recruitment Requisition
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <div className="max-w-7xl mx-auto p-8">
+        
+        {/* HEADER SECTION */}
+        <div className="mb-8">
+          <div className="flex justify-between items-start mb-8">
+            <div>
+              <h1 className="text-4xl font-bold text-slate-900 mb-2">Requisitions</h1>
+              <p className="text-slate-600 text-lg">Manage and track all your recruitment positions</p>
+            </div>
+            {canCreate && (
+              <button
+                onClick={() => navigate("/create-requirement")}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all font-semibold"
+              >
+                <Plus size={20} /> New Requisition
+              </button>
+            )}
+          </div>
+
+          {/* STATS CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-slate-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-600 text-sm font-medium">Total Positions</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-1">{requirements.length}</p>
+                </div>
+                <BookOpen className="text-blue-500" size={28} />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-slate-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-600 text-sm font-medium">Open Positions</p>
+                  <p className="text-3xl font-bold text-green-600 mt-1">{requirements.filter(r => r.status === "OPEN").length}</p>
+                </div>
+                <Clock className="text-green-500" size={28} />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-slate-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-600 text-sm font-medium">Assigned</p>
+                  <p className="text-3xl font-bold text-indigo-600 mt-1">{allocations.length}</p>
+                </div>
+                <Users className="text-indigo-500" size={28} />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm p-5 border border-slate-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-600 text-sm font-medium">Clients</p>
+                  <p className="text-3xl font-bold text-purple-600 mt-1">{new Set(requirements.map(r => r.client_id)).size}</p>
+                </div>
+                <DollarSign className="text-purple-500" size={28} />
+              </div>
+            </div>
+          </div>
         </div>
 
-        {canCreate && (
-          <button
-            onClick={() => navigate("/create-requirement")}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 mb-4"
-          >
-            + New Requisition
-          </button>
+        {/* SEARCH & FILTER SECTION */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-3 text-slate-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search by title, skills, location..."
+                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Filter size={20} className="text-slate-500" />
+              <select
+                className="px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white font-medium"
+                value={selectedClient}
+                onChange={(e) => setSelectedClient(e.target.value)}
+              >
+                <option value="">All Clients</option>
+                {clients?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* REQUIREMENTS TABLE */}
+        {!loading && filteredRequirements.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Title</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Location</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Experience</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Skills</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">CTC</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Client</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Created By</th>
+                    <th className="px-6 py-4 text-left font-semibold text-slate-700">Status</th>
+                    <th className="px-6 py-4 text-center font-semibold text-slate-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredRequirements.map((req, idx) => (
+                    <tr
+                      key={req.id}
+                      className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
+                    >
+                      <td className="px-6 py-4">
+                        <span className="font-semibold text-blue-600 hover:text-blue-700">{req.title}</span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-700">
+                        <div className="flex items-center gap-1">
+                          <MapPin size={16} className="text-slate-400" />
+                          {req.location}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-700 font-medium">{req.experience_required} yrs</td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {(() => {
+                            const skills = (req.skills_required || "").split(",").map(s => s.trim()).filter(Boolean);
+                            const displayed = skills.slice(0, 2);
+                            const remaining = skills.length - 2;
+                            return (
+                              <>
+                                {displayed.map((skill, i) => (
+                                  <span
+                                    key={i}
+                                    className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-medium"
+                                  >
+                                    {skill}
+                                  </span>
+                                ))}
+                                {remaining > 0 && (
+                                  <span 
+                                    className="bg-slate-200 text-slate-700 px-3 py-1 rounded-full text-xs font-medium cursor-help"
+                                    title={skills.slice(2).join(", ")}
+                                  >
+                                    +{remaining} more
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-700 font-medium">{req.ctc_range || "--"}</td>
+                      <td className="px-6 py-4 text-slate-700">
+                        <span className="text-xs font-medium text-slate-600">
+                          {clients.find((c) => c.id === req.client_id)?.name || "--"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-700 text-sm">{req.created_by || "--"}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                          req.status === "OPEN" 
+                            ? "bg-green-100 text-green-700" 
+                            : req.status === "CLOSED" 
+                            ? "bg-red-100 text-red-700" 
+                            : "bg-yellow-100 text-yellow-700"
+                        }`}>
+                          {req.status}
+                        </span>
+                      </td>
+
+                      {/* ACTIONS */}
+                      <td className="px-6 py-4">
+                        <div className="flex gap-2 justify-center">
+                          {/* ASSIGN */}
+                          {canAssign && (
+                            <button
+                              className="p-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors font-medium text-xs flex items-center gap-1"
+                              onClick={() => {
+                                setSelectedReq(req);
+                                setShowAssignModal(true);
+                              }}
+                              title="Assign recruiter"
+                            >
+                              <Users size={16} /> Assign
+                            </button>
+                          )}
+
+                          {/* EDIT */}
+                          {canCreate && (
+                            <button
+                              className="p-2 bg-amber-600 text-white hover:bg-amber-700 rounded-lg transition-colors font-medium text-xs flex items-center gap-1"
+                              onClick={() => {
+                                setEditForm(req);
+                                setShowEditModal(true);
+                              }}
+                              title="Edit requirement"
+                            >
+                              <Edit2 size={16} /> Edit
+                            </button>
+                          )}
+
+                          {/* JOB DESCRIPTION */}
+                          <button
+                            className="p-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg transition-colors font-medium text-xs flex items-center gap-1"
+                            onClick={() => {
+                              setViewReq(req);
+                              setShowViewModal(true);
+                            }}
+                            title="View job description"
+                          >
+                            <Eye size={16} /> Job Description
+                          </button>
+
+                          {/* DELETE */}
+                          {canCreate && (
+                            <button
+                              className="p-2 bg-red-600 text-white hover:bg-red-700 rounded-lg transition-colors font-medium text-xs flex items-center gap-1"
+                              onClick={() => handleDelete(req)}
+                              title="Delete requirement"
+                            >
+                              <Trash2 size={16} /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* EMPTY STATE */}
+        {!loading && filteredRequirements.length === 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+            <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">No Requisitions Found</h3>
+            <p className="text-slate-600 mb-6">
+              {searchTerm || selectedClient ? "Try adjusting your filters" : "Get started by creating a new requisition"}
+            </p>
+            {canCreate && !searchTerm && !selectedClient && (
+              <button
+                onClick={() => navigate("/create-requirement")}
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                <Plus size={20} /> Create First Requisition
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ASSIGNED RECRUITERS SECTION */}
+        <AssignedRecruitersTable assignedList={allocations} />
+
+        {/* VIEW MODAL */}
+        {showViewModal && viewReq && (
+          <ViewModal
+            req={viewReq}
+            setShowViewModal={setShowViewModal}
+            clients={clients}
+          />
+        )}
+
+        {/* ASSIGN MODAL */}
+        {showAssignModal && (
+          <AssignModal
+            recruiters={recruiters}
+            selectedRecruiter={selectedRecruiter}
+            setSelectedRecruiter={setSelectedRecruiter}
+            selectedReq={selectedReq}
+            setShowAssignModal={setShowAssignModal}
+            handleAssignConfirm={handleAssignConfirm}
+          />
+        )}
+
+        {/* EDIT MODAL */}
+        {showEditModal && editForm && (
+          <EditModal
+            editForm={editForm}
+            setEditForm={setEditForm}
+            setShowEditModal={setShowEditModal}
+            handleUpdateRequirement={handleUpdateRequirement}
+          />
         )}
       </div>
-
-      {/* SEARCH + FILTER */}
-      <div className="flex gap-4 items-center mb-4 bg-white p-4 rounded-lg shadow-sm">
-        <input
-          type="text"
-          placeholder="Search requirements by title, skills, location..."
-          className="border px-4 py-2 rounded-lg shadow-sm flex-1"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <select
-          className="border px-4 py-2 rounded-lg shadow-sm"
-          onChange={(e) => setSelectedClient(e.target.value)}
-        >
-          <option value="">All Clients</option>
-          {clients?.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* REQUIREMENTS TABLE */}
-      {!loading && filteredRequirements.length > 0 && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full text-sm">
-            <thead className="bg-blue-50 text-gray-700">
-              <tr>
-                <th className="p-3 text-left">Title</th>
-                <th className="p-3 text-left">Location</th>
-                <th className="p-3 text-left">Experience</th>
-                <th className="p-3 text-left">Skills</th>
-                <th className="p-3 text-left">CTC</th>
-                <th className="p-3 text-left">Client</th>
-                <th className="p-3 text-left">Created By</th>
-                <th className="p-3 text-left">Status</th>
-                <th className="p-3 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRequirements.map((req) => (
-                <tr
-                  key={req.id}
-                  className="border-t hover:bg-gray-50 transition"
-                >
-                  <td className="p-3 font-medium text-blue-500">
-                    {req.title}
-                  </td>
-                  <td className="p-3">{req.location}</td>
-                  <td className="p-3">{req.experience_required} yrs</td>
-                  <td className="p-3">
-                    <div className="flex gap-1 flex-wrap w-64">
-                      {(() => {
-                        const skills = (req.skills_required || "").split(",").map(s => s.trim()).filter(Boolean);
-                        const displayed = skills.slice(0, 3);
-                        const remaining = skills.length - 3;
-                        return (
-                          <>
-                            {displayed.map((skill, i) => (
-                              <span
-                                key={i}
-                                className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs"
-                              >
-                                {skill}
-                              </span>
-                            ))}
-                            {remaining > 0 && (
-                              <span className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-xs" title={skills.slice(3).join(", ")}>
-                                +{remaining}
-                              </span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </td>
-                  <td className="p-3">{req.ctc_range || "--"}</td>
-                  <td className="p-3">
-                    {clients.find((c) => c.id === req.client_id)?.name ||
-                      "--"}
-                  </td>
-                  <td className="p-3">{req.created_by || "--"}</td>
-                  <td className="p-3">
-                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs">
-                      {req.status}
-                    </span>
-                  </td>
-
-                  {/* ACTIONS */}
-                  <td className="p-3 text-center flex gap-2 justify-center">
-                    {/* ASSIGN */}
-                    {canAssign && (
-                      <button
-                        className="bg-indigo-600 text-white px-3 py-1 rounded text-xs"
-                        onClick={() => {
-                          setSelectedReq(req);
-                          setShowAssignModal(true);
-                        }}
-                      >
-                        Assign
-                      </button>
-                    )}
-
-                    {/* EDIT */}
-                    {canCreate && (
-                      <button
-                        className="bg-yellow-500 text-white px-3 py-1 rounded text-xs"
-                        onClick={() => {
-                          setEditForm(req);
-                          setShowEditModal(true);
-                        }}
-                      >
-                        Edit
-                      </button>
-                    )}
-
-                    {/* DELETE */}
-                    {canCreate && (
-                      <button
-                        className="bg-red-500 text-white px-3 py-1 rounded text-xs"
-                        onClick={() => handleDelete(req)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ASSIGN MODAL */}
-      {showAssignModal && (
-        <AssignModal
-          recruiters={recruiters}
-          selectedRecruiter={selectedRecruiter}
-          setSelectedRecruiter={setSelectedRecruiter}
-          selectedReq={selectedReq}
-          setShowAssignModal={setShowAssignModal}
-          handleAssignConfirm={handleAssignConfirm}
-        />
-      )}
-
-      {/* EDIT MODAL */}
-      {showEditModal && editForm && (
-        <EditModal
-          editForm={editForm}
-          setEditForm={setEditForm}
-          setShowEditModal={setShowEditModal}
-          handleUpdateRequirement={handleUpdateRequirement}
-        />
-      )}
-
-      {/* ASSIGNED LIST */}
-      <AssignedRecruitersTable assignedList={allocations} />
     </div>
   );
 }
 
-// --- Assign Modal ---
+// --- View Modal ---
+function ViewModal({ req, setShowViewModal, clients }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4 sticky top-0">
+          <h2 className="text-xl font-bold text-white">Job Description</h2>
+          <p className="text-purple-100 text-sm mt-1">{req.title}</p>
+        </div>
+
+        <div className="p-6">
+          <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap leading-relaxed text-base">
+            {req.description || "No description provided"}
+          </div>
+        </div>
+
+        <div className="flex justify-end px-6 py-4 bg-slate-50 border-t border-slate-200 sticky bottom-0">
+          <button
+            className="px-6 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg font-medium hover:from-purple-700 hover:to-purple-800 transition-all"
+            onClick={() => setShowViewModal(false)}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function AssignModal({
   recruiters,
   selectedRecruiter,
@@ -311,34 +458,42 @@ function AssignModal({
   handleAssignConfirm,
 }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
-      <div className="bg-white p-6 w-96 rounded-lg shadow-lg">
-        <h2 className="text-lg font-bold mb-4">
-          Assign Recruiter for {selectedReq.title}
-        </h2>
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+          <h2 className="text-lg font-bold text-white">
+            Assign Recruiter
+          </h2>
+          <p className="text-blue-100 text-sm mt-1">{selectedReq.title}</p>
+        </div>
 
-        <select
-          className="border px-3 py-2 w-full mb-4 rounded-lg"
-          value={selectedRecruiter}
-          onChange={(e) => setSelectedRecruiter(e.target.value)}
-        >
-          <option value="">Select Recruiter</option>
-          {recruiters.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-            </option>
-          ))}
-        </select>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Select Recruiter</label>
+            <select
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              value={selectedRecruiter}
+              onChange={(e) => setSelectedRecruiter(e.target.value)}
+            >
+              <option value="">-- Choose a recruiter --</option>
+              {recruiters.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-200">
           <button
-            className="px-4 py-2 border rounded-lg"
+            className="px-6 py-2 border border-slate-300 rounded-lg font-medium text-slate-700 hover:bg-slate-100 transition-colors"
             onClick={() => setShowAssignModal(false)}
           >
             Cancel
           </button>
           <button
-            className="px-4 py-2 bg-green-600 text-white rounded-lg"
+            className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-medium hover:from-green-700 hover:to-green-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={handleAssignConfirm}
             disabled={!selectedRecruiter}
           >
@@ -353,76 +508,109 @@ function AssignModal({
 // --- Edit Modal ---
 function EditModal({ editForm, setEditForm, setShowEditModal, handleUpdateRequirement }) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
-      <div className="bg-white p-6 w-[500px] rounded-lg shadow-lg">
-        <h2 className="text-xl font-bold mb-4 text-blue-600">
-          Edit Requirement
-        </h2>
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0">
+          <h2 className="text-xl font-bold text-white">Edit Requisition</h2>
+        </div>
 
-        <input
-          className="border p-2 w-full mb-3 rounded"
-          placeholder="Title"
-          value={editForm.title}
-          onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-        />
-        <input
-          className="border p-2 w-full mb-3 rounded"
-          placeholder="Location"
-          value={editForm.location}
-          onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-        />
-        <input
-          className="border p-2 w-full mb-3 rounded"
-          placeholder="Experience (yrs)"
-          value={editForm.experience_required}
-          onChange={(e) =>
-            setEditForm({ ...editForm, experience_required: e.target.value })
-          }
-        />
-        <textarea
-          className="border p-2 w-full mb-3 rounded h-24"
-          placeholder="Job Description"
-          value={editForm.description || ""}
-          onChange={(e) =>
-            setEditForm({ ...editForm, description: e.target.value })
-          }
-        />
-        <input
-          className="border p-2 w-full mb-3 rounded"
-          placeholder="Skills comma separated"
-          value={editForm.skills_required}
-          onChange={(e) =>
-            setEditForm({ ...editForm, skills_required: e.target.value })
-          }
-        />
-        <input
-          className="border p-2 w-full mb-3 rounded"
-          placeholder="CTC Range"
-          value={editForm.ctc_range || ""}
-          onChange={(e) => setEditForm({ ...editForm, ctc_range: e.target.value })}
-        />
-        <select
-          className="border p-2 w-full mb-3 rounded"
-          value={editForm.status}
-          onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-        >
-          <option value="OPEN">OPEN</option>
-          <option value="CLOSED">CLOSED</option>
-          <option value="ON HOLD">ON HOLD</option>
-        </select>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Title *</label>
+              <input
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Job Title"
+                value={editForm.title}
+                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Location *</label>
+              <input
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="City/Country"
+                value={editForm.location}
+                onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+              />
+            </div>
+          </div>
 
-        <div className="flex justify-end gap-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Experience Required (years)</label>
+              <input
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., 3"
+                value={editForm.experience_required}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, experience_required: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">CTC Range</label>
+              <input
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., 10-15 LPA"
+                value={editForm.ctc_range || ""}
+                onChange={(e) => setEditForm({ ...editForm, ctc_range: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Skills Required (comma-separated)</label>
+            <textarea
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., JavaScript, React, Node.js"
+              value={editForm.skills_required}
+              onChange={(e) =>
+                setEditForm({ ...editForm, skills_required: e.target.value })
+              }
+              rows="2"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Job Description</label>
+            <textarea
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Describe the role, responsibilities, and requirements..."
+              value={editForm.description || ""}
+              onChange={(e) =>
+                setEditForm({ ...editForm, description: e.target.value })
+              }
+              rows="4"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Status</label>
+            <select
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={editForm.status}
+              onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+            >
+              <option value="OPEN">OPEN</option>
+              <option value="CLOSED">CLOSED</option>
+              <option value="ON HOLD">ON HOLD</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-200 sticky bottom-0">
           <button
-            className="px-4 py-2 border rounded"
+            className="px-6 py-2 border border-slate-300 rounded-lg font-medium text-slate-700 hover:bg-slate-100 transition-colors"
             onClick={() => setShowEditModal(false)}
           >
             Cancel
           </button>
           <button
-            className="px-4 py-2 bg-blue-600 text-white rounded"
+            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-medium hover:from-blue-700 hover:to-blue-800 transition-all"
             onClick={handleUpdateRequirement}
           >
-            Update
+            Update Requisition
           </button>
         </div>
       </div>
@@ -433,45 +621,52 @@ function EditModal({ editForm, setEditForm, setShowEditModal, handleUpdateRequir
 // --- Assigned Recruiters Table ---
 function AssignedRecruitersTable({ assignedList }) {
   return (
-    <div className="mt-8 bg-white p-4 rounded-lg shadow">
-      <h3 className="text-xl font-bold mb-3 text-blue-500">
+    <div className="mt-10">
+      <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+        <Users className="text-blue-600" size={28} />
         Assigned Recruiters
-      </h3>
+      </h2>
 
-      <table className="min-w-full text-sm border">
-        <thead className="bg-blue-50 text-gray-700">
-          <tr>
-            <th className="border p-2">S.NO</th>
-            <th className="border p-2">Recruiter</th>
-            <th className="border p-2">Requirement</th>
-            <th className="border p-2">Assigned Date</th>
-            <th className="border p-2">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {assignedList.length === 0 ? (
-            <tr>
-              <td className="p-3 text-center text-gray-500" colSpan="5">
-                No assignments yet
-              </td>
-            </tr>
-          ) : (
-            assignedList.map((item, i) => (
-              <tr key={item.id}>
-                <td className="border p-2">{i + 1}</td>
-                <td className="border p-2 text-blue-500">{item.recruiter}</td>
-                <td className="border p-2">{item.requirementTitle}</td>
-                <td className="border p-2">{item.assignedDate}</td>
-                <td className="border p-2">
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">
-                    {item.status}
-                  </span>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      {assignedList.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+          <Users size={48} className="mx-auto text-slate-300 mb-4" />
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">No Assignments Yet</h3>
+          <p className="text-slate-600">Assign recruiters to requisitions to track their progress</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-4 text-left font-semibold text-slate-700">S.NO</th>
+                  <th className="px-6 py-4 text-left font-semibold text-slate-700">Recruiter</th>
+                  <th className="px-6 py-4 text-left font-semibold text-slate-700">Requisition</th>
+                  <th className="px-6 py-4 text-left font-semibold text-slate-700">Assigned Date</th>
+                  <th className="px-6 py-4 text-left font-semibold text-slate-700">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {assignedList.map((item, i) => (
+                  <tr key={item.id} className={`hover:bg-blue-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                    <td className="px-6 py-4 font-medium text-slate-700">{i + 1}</td>
+                    <td className="px-6 py-4">
+                      <span className="font-semibold text-blue-600">{item.recruiter}</span>
+                    </td>
+                    <td className="px-6 py-4 text-slate-700">{item.requirementTitle}</td>
+                    <td className="px-6 py-4 text-slate-700 text-sm">{item.assignedDate}</td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

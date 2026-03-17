@@ -81,7 +81,7 @@ def get_candidate_by_name_for_user(name: str, user: UserDict) -> Optional[Dict[s
 	
 	q = f"%{name}%"
 	return _fetch_one(
-		"SELECT id, name, email, phone, skills, education, experience, resume_filename FROM candidates WHERE name LIKE %s OR email LIKE %s LIMIT 1",
+		"SELECT id, name, email, phone, skills, education, experience, resume_filename FROM candidates WHERE (name LIKE %s OR email LIKE %s) AND deleted_at IS NULL LIMIT 1",
 		(q, q),
 	)
 
@@ -575,7 +575,7 @@ def get_org_stats_snapshot() -> Dict[str, int]:
 		cursor.execute("SELECT COUNT(*) AS open_requirements FROM requirements WHERE status = 'OPEN'")
 		stats["open_requirements"] = cursor.fetchone().get("open_requirements", 0)
 
-		cursor.execute("SELECT COUNT(*) AS total_candidates FROM candidates")
+		cursor.execute("SELECT COUNT(*) AS total_candidates FROM candidates WHERE deleted_at IS NULL")
 		stats["total_candidates"] = cursor.fetchone().get("total_candidates", 0)
 
 		cursor.execute("SELECT COUNT(*) AS total_users FROM users")

@@ -28,7 +28,7 @@ def screen_candidate():
         # Use DictCursor explicitly to avoid tuple index errors
         cursor = conn.cursor(pymysql.cursors.DictCursor)
 
-        cursor.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+        cursor.execute("SELECT * FROM candidates WHERE id = %s AND deleted_at IS NULL", (candidate_id,))
         candidate = cursor.fetchone()
 
         requirement = _resolve_requirement(cursor, requirement_ref)
@@ -430,7 +430,7 @@ def get_candidate_progress(candidate_id, req_ref):
 
         # Removed _ensure_screening_tables(cursor)
 
-        cursor.execute("SELECT * FROM candidates WHERE id=%s", (candidate_id,))
+        cursor.execute("SELECT * FROM candidates WHERE id=%s AND deleted_at IS NULL", (candidate_id,))
         candidate = cursor.fetchone()
         if not candidate:
             return jsonify({"error": "Candidate not found"}), 404
