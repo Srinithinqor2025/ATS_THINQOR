@@ -220,6 +220,16 @@ def initialize_database():
         FOREIGN KEY (created_by) REFERENCES users(id)
     );
 """)
+        # ensure soft-delete column exists
+        cursor.execute("SHOW COLUMNS FROM candidates LIKE 'deleted_at'")
+        if not cursor.fetchone():
+            print("🔧 adding deleted_at column for soft deletes")
+            try:
+                # position doesn't matter; put at end if updated_at not present
+                cursor.execute("ALTER TABLE candidates ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_candidates_deleted_at ON candidates(deleted_at)")
+            except Exception as e:
+                print("⚠️ failed to add deleted_at column:", e)
 
 
         # ---------------------------
@@ -305,6 +315,14 @@ def initialize_database():
                     cursor.execute("ALTER TABLE candidate_progress ADD COLUMN category VARCHAR(50)")
                 except Exception as e:
                     print(f"   ❌ Error adding category: {e}")
+            
+            cursor.execute("SHOW COLUMNS FROM candidate_progress LIKE 'comments'")
+            if not cursor.fetchone():
+                print("   -> Adding 'comments' column...")
+                try:
+                    cursor.execute("ALTER TABLE candidate_progress ADD COLUMN comments LONGTEXT")
+                except Exception as e:
+                    print(f"   ❌ Error adding comments: {e}") 
 
             # Fix Unique Key for candidate_progress
             print("   -> Checking unique key constraints...")
@@ -599,11 +617,11 @@ def get_candidates():
         db_name = db_row.get("DATABASE()") if db_row else None
 
         if not db_name or db_name.lower() != "ats_system":
-            print("⚠ Switching to ats database...")
+            print("⚠ Switching to ats_system database...")
             cursor.execute("USE ats_system")
             conn.commit()
 
-        # 2️⃣ Create table if it doesn't exist
+        # 2️⃣ Create candidates table if it doesn't exist
         cursor.execute("SHOW TABLES LIKE 'candidates'")
         if not cursor.fetchone():
             print("⚠ 'candidates' table not found — creating now...")
@@ -621,21 +639,23 @@ def get_candidates():
                     ectc VARCHAR(50),
                     created_by INT DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL DEFAULT NULL,
                     FOREIGN KEY (created_by) REFERENCES users(id)
                 )
             """)
             conn.commit()
             print("✅ 'candidates' table created successfully!")
 
-        # 3️⃣ Ensure ctc + ectc columns exist
+        # 3️⃣ Get all candidate columns
         cursor.execute("""
-            SELECT COLUMN_NAME 
+            SELECT COLUMN_NAME
             FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_SCHEMA='ats_system'
-            AND TABLE_NAME='candidates'
+            WHERE TABLE_SCHEMA = 'ats_system'
+              AND TABLE_NAME = 'candidates'
         """)
         cols = [row["COLUMN_NAME"] for row in cursor.fetchall()]
 
+        # 4️⃣ Ensure missing columns exist
         if "ctc" not in cols:
             print("⚠ Adding 'ctc' column")
             cursor.execute("ALTER TABLE candidates ADD COLUMN ctc VARCHAR(50)")
@@ -646,26 +666,48 @@ def get_candidates():
             cursor.execute("ALTER TABLE candidates ADD COLUMN ectc VARCHAR(50)")
             conn.commit()
 
-        # 4️⃣ Role-based filtering
+        if "deleted_at" not in cols:
+            print("⚠ Adding 'deleted_at' column")
+            cursor.execute("ALTER TABLE candidates ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL")
+            conn.commit()
+
+        # 5️⃣ Role-based filtering
         user_id = request.args.get("user_id", type=int)
         user_role = request.args.get("user_role", "").upper()
 
+        base_query = """
+            SELECT
+                c.*,
+                u.name AS created_by_name
+            FROM candidates c
+            LEFT JOIN users u ON c.created_by = u.id
+        """
+
         if user_role == "RECRUITER" and user_id:
-            cursor.execute(
-                "SELECT * FROM candidates WHERE created_by=%s ORDER BY id DESC",
-                (user_id,)
-            )
+            query = base_query + """
+                WHERE c.created_by = %s
+                  AND c.deleted_at IS NULL
+                ORDER BY c.id DESC
+            """
+            cursor.execute(query, (user_id,))
         elif user_role in ["ADMIN", "DELIVERY_MANAGER"]:
-            cursor.execute("SELECT * FROM candidates ORDER BY id DESC")
+            query = base_query + """
+                WHERE c.deleted_at IS NULL
+                ORDER BY c.id DESC
+            """
+            cursor.execute(query)
         else:
-            cursor.execute("SELECT * FROM candidates ORDER BY id DESC")
+            query = base_query + """
+                WHERE c.deleted_at IS NULL
+                ORDER BY c.id DESC
+            """
+            cursor.execute(query)
 
         rows = cursor.fetchall()
         print(f"✅ Found {len(rows)} candidates")
 
         cursor.close()
         conn.close()
-
         return jsonify(rows), 200
 
     except Exception as e:
@@ -800,7 +842,10 @@ def delete_candidate(id):
             return jsonify({"message": "Database connection failed"}), 500
 
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM candidates WHERE id=%s", (id,))
+        # Soft delete: mark as deleted instead of removing
+        print(f"🛠 Running soft-delete for candidate {id}")
+        cursor.execute("UPDATE candidates SET deleted_at = NOW() WHERE id=%s", (id,))
+        print(f"🛠 Soft-delete executed rows {cursor.rowcount}")
         conn.commit()
 
         cursor.close()
@@ -1002,7 +1047,7 @@ def get_user_details(user_id):
             cursor.execute("SELECT COUNT(*) AS open_requirements FROM requirements WHERE status = 'OPEN'")
             org_stats["open_requirements"] = cursor.fetchone().get("open_requirements", 0)
 
-            cursor.execute("SELECT COUNT(*) AS total_candidates FROM candidates")
+            cursor.execute("SELECT COUNT(*) AS total_candidates FROM candidates WHERE deleted_at IS NULL")
             org_stats["total_candidates"] = cursor.fetchone().get("total_candidates", 0)
 
             cursor.execute("SELECT COUNT(*) AS total_users FROM users")
@@ -1529,7 +1574,7 @@ def get_candidate_tracker(candidate_id):
             SELECT 
                 r.id AS req_id, r.title, r.client_id, c.name AS client_name, r.no_of_rounds,
                 rs.id AS stage_id, rs.stage_order, rs.stage_name,
-                cp.status, cp.decision, cp.updated_at
+                cp.status, cp.decision, cp.updated_at, cp.comments
             FROM requirements r
             LEFT JOIN clients c ON c.id = r.client_id
             JOIN requirement_stages rs ON rs.requirement_id = r.id
@@ -1566,6 +1611,7 @@ def get_candidate_tracker(candidate_id):
                 "stage_order": row["stage_order"],
                 "status": row["status"] or "PENDING",
                 "decision": row["decision"] or "NONE",
+                "comments": row["comments"] or "",
                 "updated_at": row["updated_at"]
             })
             
@@ -1588,6 +1634,7 @@ def update_stage_status():
         stage_id = data.get("stage_id")
         status = data.get("status") # PENDING, IN_PROGRESS, COMPLETED, REJECTED
         decision = data.get("decision") # NONE, MOVE_NEXT, HOLD, REJECT
+        comment = data.get("comment", "")
         
         if not all([candidate_id, requirement_id, stage_id, status]):
             return jsonify({"error": "Missing required fields"}), 400
@@ -1602,17 +1649,29 @@ def update_stage_status():
         
         # Use INSERT ON DUPLICATE KEY UPDATE to handle both insert and update
         # Note: Using explicit column names instead of VALUES() for MySQL 8.0+ compatibility
-        cursor.execute("""
-            INSERT INTO candidate_progress 
-            (candidate_id, requirement_id, stage_id, stage_name, status, decision)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE 
-                status = %s,
-                decision = %s,
-                updated_at = CURRENT_TIMESTAMP
-        """, (candidate_id, requirement_id, stage_id, stage_name, status, decision or 'NONE',
-              status, decision or 'NONE'))  # Repeat status and decision for UPDATE clause
-            
+        if comment:
+            cursor.execute("""
+                INSERT INTO candidate_progress 
+                (candidate_id, requirement_id, stage_id, stage_name, status, decision, comments)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    status = %s,
+                    decision = %s,
+                    comments = %s,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (candidate_id, requirement_id, stage_id, stage_name, status, decision or 'NONE', comment,
+                  status, decision or 'NONE', comment))
+        else:
+            cursor.execute("""
+                INSERT INTO candidate_progress 
+                (candidate_id, requirement_id, stage_id, stage_name, status, decision)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    status = %s,
+                    decision = %s,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (candidate_id, requirement_id, stage_id, stage_name, status, decision or 'NONE',
+                  status, decision or 'NONE'))  # Repeat status and decision for UPDATE clause
         conn.commit()
         cursor.close()
         conn.close()
@@ -2455,7 +2514,50 @@ def delete_user(id):
         print("❌ Error deleting user:", e)
         return jsonify({"message": "❌ Error deleting user", "error": str(e)}), 500
 
+@app.route("/delete-invited-user/<int:id>", methods=["DELETE"])
+def delete_invited_user(id):
+    try:
+        requester = get_current_user()
+        if not requester:
+            return jsonify({"message": "❌ Unauthorized: Please login"}), 401
 
+        requester_email = requester.get("email", "").lower()
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("SELECT id, email, role FROM usersdata WHERE id=%s", (id,))
+        target_user = cursor.fetchone()
+
+        if not target_user:
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "Pending user not found"}), 404
+
+        target_email = target_user["email"].lower()
+        target_role = target_user["role"]
+
+        if target_email == "srini@thinqorsolutions.com":
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "⛔ Security Violation: Cannot delete Main Admin."}), 403
+
+        if target_role == "ADMIN" and requester_email != "srini@thinqorsolutions.com":
+            cursor.close()
+            conn.close()
+            return jsonify({"message": "⛔ Permission Denied: Only Main Admin can delete invited Admins."}), 403
+
+        cursor.execute("DELETE FROM usersdata WHERE id=%s", (id,))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({"message": "🗑 Pending user deleted successfully!"}), 200
+
+    except Exception as e:
+        print("❌ Error deleting pending user:", e)
+        return jsonify({"message": "❌ Error deleting pending user", "error": str(e)}), 500
 
 
 # -------------------------------------
@@ -2478,7 +2580,7 @@ def get_reports_stats():
         req_stats = cursor.fetchone()
 
         # 2. Candidate Stats
-        cursor.execute("SELECT COUNT(*) as total FROM candidates")
+        cursor.execute("SELECT COUNT(*) as total FROM candidates WHERE deleted_at IS NULL")
         total_candidates = cursor.fetchone()['total']
 
         # 3. Selections (Qualified Candidates)

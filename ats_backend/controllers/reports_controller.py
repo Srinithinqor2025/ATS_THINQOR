@@ -62,10 +62,28 @@ def get_requirement_stats(req_id):
         """, (req_id,))
         progress_stats = cursor.fetchall()
         
-        # Get total candidates applied/mapped
+        # Get total candidates applied/mapped (including those later rejected)
         cursor.execute("SELECT COUNT(DISTINCT candidate_id) as total FROM candidate_progress WHERE requirement_id=%s", (req_id,))
         total_res = cursor.fetchone()
         total_candidates = total_res['total'] if total_res else 0
+
+        # Calculate billable candidates: exclude any candidate that has a REJECTED status anywhere for this requirement
+        cursor.execute("""
+            SELECT COUNT(DISTINCT cp.candidate_id) as billable
+            FROM candidate_progress cp
+            WHERE cp.requirement_id = %s
+              AND cp.candidate_id NOT IN (
+                  SELECT candidate_id FROM candidate_progress
+                  WHERE requirement_id = %s AND status = 'REJECTED'
+              )
+        """, (req_id, req_id))
+        billable_res = cursor.fetchone()
+        billable_candidates = billable_res['billable'] if billable_res else 0
+
+        # determine unique rejects: those candidates counted out of billable
+        rejected_candidates = total_candidates - billable_candidates
+        if rejected_candidates < 0:
+            rejected_candidates = 0
 
         # Get selections (candidates who are hired/selected - Completed LAST round)
         cursor.execute("""
@@ -83,10 +101,13 @@ def get_requirement_stats(req_id):
         cursor.close()
         conn.close()
         
+        # build response; billable_candidates excludes those ever rejected
         return jsonify({
             "requirement": req,
             "stats": progress_stats,
             "total_candidates": total_candidates,
+            "billable_candidates": billable_candidates,
+            "rejected_candidates": rejected_candidates,
             "selected_candidates": selected_count
         }), 200
     except Exception as e:
@@ -137,7 +158,7 @@ def get_general_stats():
         req_stats = cursor.fetchone()
 
         # Total Candidates
-        cursor.execute("SELECT COUNT(*) as total FROM candidates")
+        cursor.execute("SELECT COUNT(*) as total FROM candidates WHERE deleted_at IS NULL")
         cand_stats = cursor.fetchone()
 
         # Total Selections (This is tricky without a clear 'SELECTED' flag, approximating with 'COMPLETED' status in progress)
@@ -172,4 +193,113 @@ def get_general_stats():
             # So 'selections' should be an array of objects.
         }), 200
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@reports_bp.route('/api/reports/recent-activity', methods=['GET'])
+def get_recent_activity():
+    """Return recent activity (user actions, candidates progressed, etc)."""
+    print("📊 recent activity endpoint called")
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        cursor = conn.cursor(dictionary=True)
+        
+        activities = []
+        
+        # Get recent user registrations
+        cursor.execute("""
+            SELECT id, name, role, created_at 
+            FROM users 
+            ORDER BY created_at DESC 
+            LIMIT 10
+        """)
+        users = cursor.fetchall()
+        for user in users:
+            activities.append({
+                "type": "user_created",
+                "text": f"{user['name']} joined as {user['role'].replace('_', ' ').title()}",
+                "created_at": user['created_at'],
+                "color": "bg-green-500"
+            })
+        
+        # Get recent completed candidates
+        cursor.execute("""
+            SELECT DISTINCT cp.candidate_id, c.name, r.title, cp.updated_at
+            FROM candidate_progress cp
+            JOIN candidates c ON c.id = cp.candidate_id
+            JOIN requirements r ON r.id = cp.requirement_id
+            WHERE cp.status='COMPLETED'
+            ORDER BY cp.updated_at DESC
+            LIMIT 10
+        """)
+        completions = cursor.fetchall()
+        for completion in completions:
+            activities.append({
+                "type": "candidate_completed",
+                "text": f"{completion['name']} hired for {completion['title']}",
+                "created_at": completion['updated_at'],
+                "color": "bg-purple-500"
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        # Sort by created_at and limit to 5 most recent
+        activities.sort(key=lambda x: x['created_at'], reverse=True)
+        activities = activities[:5]
+        
+        print(f"📊 Returning {len(activities)} activities")
+        
+        return jsonify({"activities": activities}), 200
+    except Exception as e:
+        print(f"❌ Error in get_recent_activity: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@reports_bp.route('/api/reports/hiring-months', methods=['GET'])
+def get_monthly_hires():
+    """Return number of hires (completed selections) grouped by month for the past year."""
+    print("📊 monthly hires endpoint called")
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        cursor = conn.cursor(dictionary=True)
+        
+        # Debug: Check total completed records
+        cursor.execute("SELECT COUNT(*) as count FROM candidate_progress WHERE status='COMPLETED'")
+        total_completed = cursor.fetchone()
+        print(f"📊 Total COMPLETED records: {total_completed}")
+        
+        # assuming candidate_progress.status='COMPLETED' on last round indicates a hire
+        # count by month name for past 12 months
+        cursor.execute("""
+            SELECT DATE_FORMAT(cp.updated_at, '%b %Y') as month, COUNT(DISTINCT cp.candidate_id) as hires
+            FROM candidate_progress cp
+            JOIN requirement_stages rs ON rs.id = cp.stage_id
+            JOIN requirements r ON r.id = cp.requirement_id
+            WHERE cp.status='COMPLETED'
+              AND rs.stage_order = r.no_of_rounds
+              AND cp.updated_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+            GROUP BY YEAR(cp.updated_at), MONTH(cp.updated_at), DATE_FORMAT(cp.updated_at, '%b %Y')
+            ORDER BY YEAR(cp.updated_at), MONTH(cp.updated_at)
+        """)
+        rows = cursor.fetchall()
+        print(f"📊 Query returned {len(rows)} rows: {rows}")
+        
+        cursor.close()
+        conn.close()
+        
+        # format for frontend: arrays of months and counts
+        months = []
+        hires = []
+        for row in rows:
+            months.append(row['month'])
+            hires.append(row['hires'])
+        
+        result = {"months": months, "hires": hires}
+        print(f"📊 Returning: {result}")
+        return jsonify(result), 200
+    except Exception as e:
+        print(f"❌ Error in get_monthly_hires: {str(e)}")
         return jsonify({"error": str(e)}), 500

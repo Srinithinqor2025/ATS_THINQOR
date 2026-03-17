@@ -3,7 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { verifySession } from "./auth/authSlice";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Header from "./components/Header";
+import Layout from "./components/Layout";
 import Login from "./components/Login";
 import Signup from "./components/Signup";
 import AdminDashboard from "./components/AdminDashboard";
@@ -22,8 +22,7 @@ import CandidateTracking from "./components/CandidateTracking";
 import Reports from "./components/Reports";
 import Settings from "./components/Settings";
 import TlDashboard from "./components/TLDashboard";
-import Avatar3D from "./components/Avatar3D";
-import ChatPage from "./components/chatpage";
+
 export default function App() {
   const dispatch = useDispatch();
 
@@ -32,10 +31,7 @@ export default function App() {
   }, [dispatch]);
 
   return (
-    <>
-      {/* 🌐 Always visible Header for everyone */}
-      <Header />
-
+    <Layout>
       {/* 🔀 Page routing */}
       <Routes>
         {/* Public Routes */}
@@ -67,13 +63,12 @@ export default function App() {
           <Route path="/candidate-tracking" element={<CandidateList />} />
           <Route path="/candidate-tracking/:candidateId/:requirementId" element={<CandidateTracking />} />
           <Route path="/reports" element={<Reports />} />
-          <Route path="/chat" element={<ChatPage />} />
           <Route path="/offers" element={<div className="p-10 text-center text-gray-500">Offers Page Coming Soon</div>} />
         </Route>
       </Routes>
 
       {/* 🤖 AI Chat - Floating button on all pages (only visible when logged in) */}
       <FloatingAiChat />
-    </>
+    </Layout>
   );
 }
